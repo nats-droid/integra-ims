@@ -1,0 +1,55 @@
+# Dependencies
+node_modules/
+.pnp
+.pnp.js
+
+# Next.js
+.next/
+out/
+
+# Build output
+dist/
+build/
+
+# Environment — SECRETS! Jangan commit
+.env
+.env.local
+.env.production
+.env.development
+backend/.env
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+*.egg-info/
+.eggs/
+venv/
+.venv/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+npm-debug.log*
+
+# Screenshots & temp scripts (Playwright verification artifacts)
+screenshot_*.png
+pw_screenshots_*.py
+
+# Supabase local
+supabase/.temp
+
+# Dev auth utilities (not for production)
+frontend/.htpasswd
+frontend/public/set_session.html

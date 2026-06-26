@@ -1,0 +1,10 @@
+fastapi
+uvicorn[standard]
+pyjwt
+supabase
+pandas
+scikit-learn
+statsmodels
+numpy
+httpx
+cryptography
