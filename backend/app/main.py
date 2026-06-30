@@ -5,7 +5,7 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from app.core.config import settings
-from app.api import health, auth, analytics, ai_config, remaining_life, dm_screener
+from app.api import health, auth, analytics, ai_config, remaining_life, dm_screener, rl_confidence
 
 app = FastAPI(
     title="Integra Analytics API",
@@ -29,3 +29,4 @@ app.include_router(analytics.router, prefix="/api/v1", tags=["Analytics"])
 app.include_router(ai_config.router, prefix="/api/v1", tags=["AI Config"])
 app.include_router(remaining_life.router, tags=["Remaining Life"])
 app.include_router(dm_screener.router, tags=["DM Screener"])
+app.include_router(rl_confidence.router, tags=["RL Confidence"])

@@ -152,3 +152,7 @@ def query_manual(
         "pwht": has_pwht,
     }
     return screen_asset(input_data)
+
+
+# Alias for backward compat — dm_screener.py imports match_equipment
+match_equipment = screen_asset

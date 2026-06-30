@@ -6,6 +6,7 @@ Verification is done via the JWKS endpoint — no more single HS256 secret.
 from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Header
+import jwt as _jwt
 from jwt import PyJWKClient, ExpiredSignatureError, InvalidTokenError
 
 from app.core.config import settings
@@ -67,7 +68,7 @@ async def verify_jwt(authorization: Optional[str] = Header(None)):
         signing_key = client.get_signing_key_from_jwt(token)
 
         # Step 2: verify the token with the resolved public key
-        payload = jwt.decode(
+        payload = _jwt.decode(
             token,
             signing_key.key,
             algorithms=["ES256"],

@@ -38,6 +38,54 @@ async def detect_anomalies(
     return result
 
 
+@router.post("/analytics/anomalies/recalculate")
+async def recalculate_anomalies(
+    user: dict = Depends(verify_jwt),
+):
+    """
+    Batch anomaly detection for all CML points owned by the user's company.
+    """
+    from app.core.database import get_db
+
+    db = get_db()
+    company_id = user["company_id"]
+
+    # Get all CML points for this company
+    cml_result = db.table("cml_points") \
+        .select("id,location_label,equipment_id") \
+        .eq("company_id", company_id) \
+        .eq("is_active", True) \
+        .execute()
+
+    cml_points = cml_result.data
+
+    cml_with_anomalies = 0
+    total_anomalies = 0
+    skipped = 0
+    errors = []
+
+    for cml in cml_points:
+        try:
+            result = await anomaly_detection.detect(cml["id"], company_id)
+            if result.get("status") == "insufficient_data":
+                skipped += 1
+                continue
+            count = result.get("anomaly_count", 0)
+            if count > 0:
+                cml_with_anomalies += 1
+                total_anomalies += count
+        except Exception as e:
+            errors.append({"cml_point_id": cml["id"], "error": str(e)})
+
+    return {
+        "total_cml": len(cml_points),
+        "cml_with_anomalies": cml_with_anomalies,
+        "total_anomalies": total_anomalies,
+        "skipped": skipped,
+        "errors": len(errors),
+    }
+
+
 @router.post("/analytics/fleet-risk/{company_id}")
 async def compute_fleet_risk(
     company_id: str,

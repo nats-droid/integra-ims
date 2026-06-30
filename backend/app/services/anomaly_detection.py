@@ -1,12 +1,13 @@
 """
 Corrosion Anomaly Detection (PRD Section 5.2)
-Trigger-agnostic - uses z-score / IQR against historical rates.
+Trigger-agnostic — uses z-score against CML's own historical corrosion rate distribution.
 
 Approach: Calculate corrosion rate between consecutive readings,
 then flag readings where rate deviates significantly from the CML's own history.
 """
 import numpy as np
 from app.core.database import get_db
+from datetime import datetime
 
 
 async def detect(cml_point_id: str, company_id: str) -> dict:
@@ -26,14 +27,16 @@ async def detect(cml_point_id: str, company_id: str) -> dict:
         return {
             "cml_point_id": cml_point_id,
             "status": "insufficient_data",
-            "message": "Minimal 3 readings diperlukan",
+            "message": "Minimum 3 readings required",
             "anomalies": [],
         }
     
     # Calculate corrosion rates between consecutive readings
     rates = []
     for i in range(1, len(readings)):
-        days_diff = (readings[i]["reading_date"] - readings[i-1]["reading_date"]).days
+        d1 = datetime.fromisoformat(readings[i]["reading_date"]).date()
+        d2 = datetime.fromisoformat(readings[i-1]["reading_date"]).date()
+        days_diff = (d1 - d2).days
         if days_diff <= 0:
             continue
         thickness_diff = readings[i-1]["reading_mm"] - readings[i]["reading_mm"]
@@ -50,7 +53,15 @@ async def detect(cml_point_id: str, company_id: str) -> dict:
         return {
             "cml_point_id": cml_point_id,
             "status": "no_data",
-            "message": "Tidak cukup data untuk menghitung rate",
+            "message": "Insufficient data to calculate rates",
+            "anomalies": [],
+        }
+    
+    if len(rates) < 2:
+        return {
+            "cml_point_id": cml_point_id,
+            "status": "insufficient_data",
+            "message": "At least 2 inter-reading intervals required for anomaly detection",
             "anomalies": [],
         }
     
@@ -58,13 +69,13 @@ async def detect(cml_point_id: str, company_id: str) -> dict:
     
     # Z-score method
     mean_rate = np.mean(rate_values)
-    std_rate = np.std(rate_values)
+    std_rate = np.std(rate_values, ddof=1)
     
     if std_rate == 0:
         return {
             "cml_point_id": cml_point_id,
             "status": "uniform",
-            "message": "Tidak ada variasi pada corrosion rate",
+            "message": "No variation in corrosion rate — uniform readings",
             "anomalies": [],
         }
     
@@ -77,17 +88,26 @@ async def detect(cml_point_id: str, company_id: str) -> dict:
                 "reading_mm": r["reading_mm"],
                 "rate_mm_year": r["rate_mm_year"],
                 "anomaly_score": round(float(z_score), 2),
-                "description": f"Corrosion rate {r['rate_mm_year']:.4f} mm/year (mean: {mean_rate:.4f}) — deviasi {z_score:.1f}σ",
+                "description": f"Corrosion rate {r['rate_mm_year']:.4f} mm/year (mean: {mean_rate:.4f}) — deviation {z_score:.1f}σ",
             })
     
-    # Save anomalies to table
-    for anomaly in anomalies:
-        db.table("corrosion_anomalies").insert({
+    # Replace anomalies — delete old, insert new (dedup-safe)
+    existing = db.table("corrosion_anomalies") \
+        .select("id") \
+        .eq("cml_point_id", cml_point_id) \
+        .eq("company_id", company_id) \
+        .execute()
+    for row in existing.data:
+        db.table("corrosion_anomalies").delete().eq("id", row["id"]).execute()
+    
+    if anomalies:
+        payload = [{
             "company_id": company_id,
             "cml_point_id": cml_point_id,
-            "anomaly_score": anomaly["anomaly_score"],
-            "description": anomaly["description"],
-        }).execute()
+            "anomaly_score": a["anomaly_score"],
+            "description": a["description"],
+        } for a in anomalies]
+        db.table("corrosion_anomalies").insert(payload).execute()
     
     return {
         "cml_point_id": cml_point_id,

@@ -191,7 +191,7 @@ export default function DashboardLayout({
             className="w-full flex items-center gap-3 px-3 py-2 text-sm text-muted-foreground hover:text-destructive rounded-md hover:bg-destructive/10 transition-colors"
           >
             <Icons.LogOut />
-            {sidebarOpen && <span>Keluar</span>}
+            {sidebarOpen && <span>Logout</span>}
           </button>
         </div>
       </aside>

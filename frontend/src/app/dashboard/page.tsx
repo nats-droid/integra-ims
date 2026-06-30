@@ -2,22 +2,163 @@
 export const dynamic = 'force-dynamic'
 
 import { createClient } from '@/lib/supabase/client'
-import { useEffect, useState } from 'react'
+import { useEffect, useState, useCallback } from 'react'
+import { cn } from '@/utils/cn'
+import Link from 'next/link'
+import {
+  LayoutDashboard,
+  ClipboardList,
+  Clock,
+  BarChart3,
+  TrendingDown,
+  AlertTriangle,
+  ShieldAlert,
+  UserCircle,
+  CheckCircle2,
+  ExternalLink,
+  Inbox,
+  RefreshCw,
+} from 'lucide-react'
+import {
+  BarChart,
+  Bar,
+  XAxis,
+  YAxis,
+  CartesianGrid,
+  Tooltip,
+  ResponsiveContainer,
+  Cell,
+} from 'recharts'
+import DrillDownTable from '@/components/DrillDownTable'
+
+/* ── Types ─────────────────────────────────────────────────── */
+
+type TabKey = 'overview' | 'worklist' | 'pending' | 'workload' | 'rl' | 'anomaly' | 'fleet'
 
 interface KPI {
   label: string
-  value: string | number
-  subtext?: string
-  color?: string
+  value: number
+  icon: React.ReactNode
+  color: string
+  description: string
 }
 
+interface ChartBar {
+  name: string
+  value: number
+  fill: string
+}
+
+interface WorklistItem {
+  id: string
+  equipment_tag: string
+  inspection_type: string
+  event_date: string
+  status: string
+}
+
+interface WorkloadInspector {
+  id: string
+  full_name: string
+  total: number
+  done: number
+  completionRate: number
+  overdue: number
+}
+
+interface FilterState {
+  plantArea: string
+  fluidService: string
+  riskCategory: string
+}
+
+/* ── Tab definitions ───────────────────────────────────────── */
+
+const tabs: { key: TabKey; label: string; icon: React.ReactNode }[] = [
+  { key: 'overview',  label: 'Overview',         icon: <LayoutDashboard className="h-4 w-4" /> },
+  { key: 'worklist',  label: 'My Worklist',      icon: <ClipboardList className="h-4 w-4" /> },
+  { key: 'pending',   label: 'Pending Approval',  icon: <Clock className="h-4 w-4" /> },
+  { key: 'workload',  label: 'Workload',          icon: <BarChart3 className="h-4 w-4" /> },
+  { key: 'rl',        label: 'Remaining Life',     icon: <TrendingDown className="h-4 w-4" /> },
+  { key: 'anomaly',   label: 'Anomaly',            icon: <AlertTriangle className="h-4 w-4" /> },
+  { key: 'fleet',     label: 'Fleet Risk',         icon: <ShieldAlert className="h-4 w-4" /> },
+]
+
+/* ── Date helpers ──────────────────────────────────────────── */
+
+function todayISO(): string {
+  return new Date().toISOString().split('T')[0]
+}
+
+function addDays(days: number): string {
+  const d = new Date()
+  d.setDate(d.getDate() + days)
+  return d.toISOString().split('T')[0]
+}
+
+const ACRONYMS = new Set(['cui', 'utm', 'vt', 'pt', 'rt', 'ut', 'mt', 'pt', 'rfi', 'ndt'])
+
+function formatInspectionType(type: string): string {
+  if (!type) return '—'
+  if (ACRONYMS.has(type.toLowerCase())) return type.toUpperCase()
+  return type.charAt(0).toUpperCase() + type.slice(1)
+}
+
+/* ── Semantic chart colors ─────────────────────────────────── */
+
+const CHART_COLORS = {
+  safe:    '#22c55e',  // green-500
+  due90:   '#fbbf24',  // amber-400
+  due60:   '#f59e0b',  // amber-500
+  due30:   '#ef4444',  // red-500
+}
+
+/* ── Component ─────────────────────────────────────────────── */
+
 export default function DashboardPage() {
-  const [kpis, setKpis] = useState<KPI[]>([])
-  const [loading, setLoading] = useState(true)
   const supabase = createClient()
+  const [activeTab, setActiveTab] = useState<TabKey>('overview')
+  const [kpis, setKpis] = useState<KPI[]>([])
+  const [chartData, setChartData] = useState<ChartBar[]>([])
+  const [loading, setLoading] = useState(true)
+  const [userName, setUserName] = useState('')
+  const [userRole, setUserRole] = useState<string>('')
+  const [appUserId, setAppUserId] = useState<string>('')
+  const [companyId, setCompanyId] = useState<string>('')
+
+  // My Worklist state
+  const [worklist, setWorklist] = useState<WorklistItem[]>([])
+  const [worklistLoading, setWorklistLoading] = useState(false)
+
+  // Pending Approval state
+  const [pendingCount, setPendingCount] = useState(0)
+  const [pendingLoading, setPendingLoading] = useState(false)
+
+  // Workload state
+  const [workload, setWorkload] = useState<WorkloadInspector[]>([])
+  const [workloadLoading, setWorkloadLoading] = useState(false)
+
+  // Anomaly state
+  const [anomalies, setAnomalies] = useState<any[]>([])
+  const [anomaliesLoading, setAnomaliesLoading] = useState(false)
+  const [recalculating, setRecalculating] = useState(false)
+
+  // Filter state
+  const [filters, setFilters] = useState<FilterState>({
+    plantArea: '',
+    fluidService: '',
+    riskCategory: '',
+  })
+
+  // Filter options (loaded once)
+  const [plantAreas, setPlantAreas] = useState<string[]>([])
+  const [fluidServices, setFluidServices] = useState<string[]>([])
+  const [riskCategories, setRiskCategories] = useState<string[]>([])
+
+  /* ── Load filter options on mount ──────────────────────────── */
 
   useEffect(() => {
-    async function loadKPI() {
+    async function loadFilters() {
       const { data: { user } } = await supabase.auth.getUser()
       if (!user) return
 
@@ -27,105 +168,1069 @@ export default function DashboardPage() {
         .eq('auth_user_id', user.id)
         .maybeSingle() as unknown as { data: { company_id: string } | null }
 
-      if (!appUser?.company_id) {
+      if (!appUser?.company_id) return
+
+      const cid = appUser.company_id
+
+      // Plant areas
+      const { data: areas } = await (supabase as any)
+        .from('plant_areas')
+        .select('name')
+        .eq('company_id', cid)
+        .order('name')
+
+      if (areas) {
+        setPlantAreas([...new Set(areas.map((a: { name: string }) => a.name))] as string[])
+      }
+
+      // Fluid services (distinct from equipment)
+      const { data: equips } = await (supabase as any)
+        .from('equipment')
+        .select('fluid_service, risk_category')
+        .eq('company_id', cid)
+
+      if (equips) {
+        const fluids = [...new Set(equips.map((e: { fluid_service: string | null }) => e.fluid_service).filter(Boolean))] as string[]
+        const risks = [...new Set(equips.map((e: { risk_category: string | null }) => e.risk_category).filter(Boolean))] as string[]
+        setFluidServices(fluids.sort())
+        setRiskCategories(risks.sort())
+      }
+    }
+    loadFilters()
+  }, [supabase])
+
+  /* ── Load KPIs + Chart data (re-run when filters change) ──── */
+
+  const loadData = useCallback(async () => {
+    setLoading(true)
+    try {
+      const { data: { user } } = await supabase.auth.getUser()
+      if (!user) { setLoading(false); return }
+
+      const { data: appUser } = await supabase
+        .from('app_users')
+        .select('id, company_id, full_name, role')
+        .eq('auth_user_id', user.id)
+        .maybeSingle() as unknown as { data: { id: string; company_id: string; full_name: string; role: string } | null }
+
+      if (!appUser?.company_id) { setLoading(false); return }
+
+      setUserName(appUser.full_name || 'User')
+      setUserRole(appUser.role || '')
+      setAppUserId(appUser.id || '')
+      setCompanyId(appUser.company_id || '')
+      const cid = appUser.company_id
+      const today = todayISO()
+      const d90 = addDays(90)
+      const d60 = addDays(60)
+      const d30 = addDays(30)
+
+      // Build equipment filter query
+      let equipQuery = (supabase as any)
+        .from('equipment')
+        .select('id')
+        .eq('company_id', cid)
+
+      if (filters.plantArea) {
+        // Get area_id from plant_areas name
+        const { data: areaRow } = await (supabase as any)
+          .from('plant_areas')
+          .select('id')
+          .eq('company_id', cid)
+          .eq('name', filters.plantArea)
+          .maybeSingle()
+        if (areaRow) {
+          equipQuery = equipQuery.eq('area_id', areaRow.id)
+        } else {
+          // No matching area — empty result
+          setKpis(kpiZeros())
+          setChartData(chartZeros())
+          setLoading(false)
+          return
+        }
+      }
+      if (filters.fluidService) {
+        equipQuery = equipQuery.eq('fluid_service', filters.fluidService)
+      }
+      if (filters.riskCategory) {
+        equipQuery = equipQuery.eq('risk_category', filters.riskCategory)
+      }
+
+      const { data: filteredEquips } = await equipQuery
+      const equipIds = (filteredEquips || []).map((e: { id: string }) => e.id)
+
+      // Total Equipment count
+      const totalEquip = equipIds.length
+
+      // If no equipment match filter, short-circuit
+      if (totalEquip === 0) {
+        setKpis(kpiZeros())
+        setChartData(chartZeros())
         setLoading(false)
         return
       }
 
-      const companyId = appUser.company_id
+      // Get plans for filtered equipment
+      let plansQuery = (supabase as any)
+        .from('inspection_plans')
+        .select('id, equipment_id, final_due_date, is_active')
+        .eq('company_id', cid)
+        .eq('is_active', true)
+        .in('equipment_id', equipIds)
 
-      // Fetch data — wrapped to handle missing Supabase config gracefully
-      const fetchCount = async (table: string, filters: Record<string, any> = {}) => {
-        try {
-          let query = supabase.from(table as any).select('id', { count: 'exact', head: true } as any)
-          for (const [key, val] of Object.entries(filters)) {
-            query = (query as any).eq(key, val)
-          }
-          return (await query).count ?? 0
-        } catch {
-          return 0
+      const { data: plans } = await plansQuery as { data: { id: string; equipment_id: string; final_due_date: string | null; is_active: boolean }[] | null }
+
+      // Count KPIs from plans
+      let due90 = 0, due60 = 0, due30 = 0, overdueCount = 0
+      const overdueEquipSet = new Set<string>()
+
+      // Chart categories — count EQUIPMENT (not plans), deduplicate
+      const safeSet = new Set<string>()
+      const due90Set = new Set<string>()
+      const due60Set = new Set<string>()
+      const due30OverdueSet = new Set<string>()
+
+      for (const plan of plans || []) {
+        const eid = plan.equipment_id
+
+        if (!plan.final_due_date) {
+          // Null final_due_date → Safe
+          safeSet.add(eid)
+          continue
+        }
+
+        const due = plan.final_due_date.slice(0, 10)
+
+        if (due < today) {
+          overdueCount++
+          overdueEquipSet.add(eid)
+          due30OverdueSet.add(eid)
+        } else if (due <= d30) {
+          due30++
+          due30OverdueSet.add(eid)
+        } else if (due <= d60) {
+          due60++
+          due60Set.add(eid)
+        } else if (due <= d90) {
+          due90++
+          due90Set.add(eid)
+        } else {
+          safeSet.add(eid)
         }
       }
 
-      const [equipResult, plansPending, plansActive, cmResult] = await Promise.all([
-        fetchCount('equipment', { company_id: companyId }),
-        fetchCount('inspection_plans', { company_id: companyId, approval_status: 'pending' }),
-        fetchCount('inspection_plans', { company_id: companyId, approval_status: 'approved' }),
-        fetchCount('cml_points', { company_id: companyId }),
-      ])
+      // Equipment with plans that have dates, but also null-date plans → still safe
+      // Equipment with no plans at all → safe
+      const equipWithPlan = new Set(plans?.map(p => p.equipment_id) || [])
+      for (const eid of equipIds) {
+        if (!equipWithPlan.has(eid)) {
+          safeSet.add(eid)
+        }
+      }
+
+      // Non-compliant: distinct equipment with overdue plan
+      const nonCompliant = overdueEquipSet.size
 
       setKpis([
-        { label: 'Total Equipment', value: equipResult, color: 'blue' },
-        { label: 'Total CML Points', value: cmResult, color: 'indigo' },
-        { label: 'Pending Approval', value: plansPending, color: 'amber' },
-        { label: 'Active Plans', value: plansActive, color: 'green' },
+        {
+          label: 'Total Equipment',
+          value: totalEquip,
+          icon: <LayoutDashboard className="h-5 w-5" />,
+          color: 'blue',
+          description: 'All registered equipment across all types',
+        },
+        {
+          label: 'Due ≤ 90 Days',
+          value: due90,
+          icon: <Clock className="h-5 w-5" />,
+          color: 'amber',
+          description: 'Active plans with due date within 90 days',
+        },
+        {
+          label: 'Due ≤ 60 Days',
+          value: due60,
+          icon: <Clock className="h-5 w-5" />,
+          color: 'orange',
+          description: 'Active plans with due date within 60 days',
+        },
+        {
+          label: 'Due ≤ 30 Days',
+          value: due30,
+          icon: <AlertTriangle className="h-5 w-5" />,
+          color: 'red',
+          description: 'Active plans with due date within 30 days',
+        },
+        {
+          label: 'Overdue',
+          value: overdueCount,
+          icon: <AlertTriangle className="h-5 w-5" />,
+          color: 'destructive',
+          description: 'Active plans past their due date',
+        },
+        {
+          label: 'Non-Compliant',
+          value: nonCompliant,
+          icon: <ShieldAlert className="h-5 w-5" />,
+          color: 'destructive',
+          description: 'Equipment with at least 1 overdue plan',
+        },
       ])
+
+      // Chart data (equipment counts per zone)
+      setChartData([
+        { name: 'Safe',           value: safeSet.size,        fill: CHART_COLORS.safe },
+        { name: 'Due 90 Days',    value: due90Set.size,       fill: CHART_COLORS.due90 },
+        { name: 'Due 60 Days',    value: due60Set.size,       fill: CHART_COLORS.due60 },
+        { name: 'Due 30 & Overdue', value: due30OverdueSet.size, fill: CHART_COLORS.due30 },
+      ])
+
+    } catch (err) {
+      console.error('Dashboard load error:', err)
+    } finally {
       setLoading(false)
     }
-    loadKPI()
-  }, [supabase])
+  }, [supabase, filters])
+
+  useEffect(() => { loadData() }, [loadData])
+
+  /* ── Load My Worklist (inspector only) ─────────────────── */
+
+  useEffect(() => {
+    if (activeTab !== 'worklist' || !appUserId || !companyId) return
+    async function load() {
+      setWorklistLoading(true)
+      try {
+        // Get inspection_events for this inspector
+        const { data: events } = await (supabase as any)
+          .from('inspection_events')
+          .select('id, equipment_id, inspection_type, event_date, status')
+          .eq('company_id', companyId)
+          .eq('inspector_id', appUserId)
+          .order('event_date', { ascending: false })
+
+        if (!events || events.length === 0) {
+          setWorklist([])
+          setWorklistLoading(false)
+          return
+        }
+
+        // Get equipment tags
+        const equipIds = [...new Set(events.map((e: any) => e.equipment_id))]
+        const { data: equips } = await (supabase as any)
+          .from('equipment')
+          .select('id, tag')
+          .in('id', equipIds)
+
+        const tagMap: Record<string, string> = {}
+        for (const eq of equips || []) {
+          tagMap[eq.id] = eq.tag
+        }
+
+        setWorklist(
+          events.map((ev: any) => ({
+            id: ev.id,
+            equipment_tag: tagMap[ev.equipment_id] || ev.equipment_id,
+            inspection_type: ev.inspection_type || '—',
+            event_date: ev.event_date || '—',
+            status: ev.status || 'draft',
+          }))
+        )
+      } catch (err) {
+        console.error('Worklist load error:', err)
+      } finally {
+        setWorklistLoading(false)
+      }
+    }
+    load()
+  }, [activeTab, appUserId, companyId, supabase])
+
+  /* ── Load Pending Approval count ───────────────────────── */
+
+  useEffect(() => {
+    if (activeTab !== 'pending' || !companyId) return
+    async function load() {
+      setPendingLoading(true)
+      try {
+        const { count } = await (supabase as any)
+          .from('inspection_plans')
+          .select('id', { count: 'exact', head: true })
+          .eq('company_id', companyId)
+          .eq('approval_status', 'pending')
+          .eq('is_active', true)
+
+        setPendingCount(count || 0)
+      } catch (err) {
+        console.error('Pending count error:', err)
+      } finally {
+        setPendingLoading(false)
+      }
+    }
+    load()
+  }, [activeTab, companyId, supabase])
+
+  /* ── Load Workload (supervisor only) ───────────────────── */
+
+  useEffect(() => {
+    if (activeTab !== 'workload' || !companyId) return
+    async function load() {
+      setWorkloadLoading(true)
+      try {
+        // Get all inspectors in this company
+        const { data: inspectors } = await (supabase as any)
+          .from('app_users')
+          .select('id, full_name')
+          .eq('company_id', companyId)
+          .eq('role', 'inspector')
+          .eq('is_active', true)
+          .order('full_name')
+
+        if (!inspectors || inspectors.length === 0) {
+          setWorkload([])
+          setWorkloadLoading(false)
+          return
+        }
+
+        const today = todayISO()
+        const results: WorkloadInspector[] = []
+
+        for (const insp of inspectors) {
+          // Total events assigned
+          const { count: total } = await (supabase as any)
+            .from('inspection_events')
+            .select('id', { count: 'exact', head: true })
+            .eq('company_id', companyId)
+            .eq('inspector_id', insp.id)
+
+          // Done (approved)
+          const { count: done } = await (supabase as any)
+            .from('inspection_events')
+            .select('id', { count: 'exact', head: true })
+            .eq('company_id', companyId)
+            .eq('inspector_id', insp.id)
+            .eq('status', 'approved')
+
+          // Overdue (event_date < today AND status NOT approved)
+          const { count: overdue } = await (supabase as any)
+            .from('inspection_events')
+            .select('id', { count: 'exact', head: true })
+            .eq('company_id', companyId)
+            .eq('inspector_id', insp.id)
+            .neq('status', 'approved')
+            .lt('event_date', today)
+
+          const t = total || 0
+          const d = done || 0
+
+          results.push({
+            id: insp.id,
+            full_name: insp.full_name,
+            total: t,
+            done: d,
+            completionRate: t > 0 ? Math.round((d / t) * 100) : 0,
+            overdue: overdue || 0,
+          })
+        }
+
+        setWorkload(results)
+      } catch (err) {
+        console.error('Workload load error:', err)
+      } finally {
+        setWorkloadLoading(false)
+      }
+    }
+    load()
+  }, [activeTab, companyId, supabase])
+
+  /* ── Load Anomalies ────────────────────────────────────── */
+
+  useEffect(() => {
+    if (activeTab !== 'anomaly' || !companyId) return
+    async function load() {
+      setAnomaliesLoading(true)
+      try {
+        // Fetch anomalies with CML join
+        const { data: anomalyRows } = await (supabase as any)
+          .from('corrosion_anomalies')
+          .select('*, cml_points!inner(location_label, equipment_id)')
+          .eq('company_id', companyId)
+          .order('anomaly_score', { ascending: false })
+
+        if (!anomalyRows || anomalyRows.length === 0) {
+          setAnomalies([])
+          setAnomaliesLoading(false)
+          return
+        }
+
+        // Get equipment tags for unique equipment IDs
+        const equipIds = [...new Set(anomalyRows.map((a: any) => a.cml_points?.equipment_id).filter(Boolean))]
+        const { data: equips } = await (supabase as any)
+          .from('equipment')
+          .select('id, tag')
+          .in('id', equipIds)
+
+        const tagMap: Record<string, string> = {}
+        for (const eq of equips || []) {
+          tagMap[eq.id] = eq.tag
+        }
+
+        // Build display rows
+        const rows = anomalyRows.map((a: any) => {
+          const desc = a.description || ''
+          const rateMatch = desc.match(/rate ([\d.]+) mm/)
+          return {
+            id: a.id,
+            cml_point_id: a.cml_point_id,
+            equipment_id: a.cml_points?.equipment_id,
+            location_label: a.cml_points?.location_label || '—',
+            equipment_tag: tagMap[a.cml_points?.equipment_id] || '—',
+            anomaly_score: a.anomaly_score,
+            rate_mm_year: rateMatch ? parseFloat(rateMatch[1]) : null,
+            detected_at: a.detected_at,
+          }
+        })
+
+        setAnomalies(rows)
+      } catch (err) {
+        console.error('Anomaly load error:', err)
+        setAnomalies([])
+      } finally {
+        setAnomaliesLoading(false)
+      }
+    }
+    load()
+  }, [activeTab, companyId, supabase])
+
+  /* ── Recalculate anomalies ─────────────────────────────── */
+
+  const handleRecalculate = useCallback(async () => {
+    if (recalculating) return
+    setRecalculating(true)
+    try {
+      const { data: { session } } = await supabase.auth.getSession()
+      if (!session?.access_token) {
+        console.error('No auth session')
+        return
+      }
+
+      const backendUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000'
+      const res = await fetch(`${backendUrl}/api/v1/analytics/anomalies/recalculate`, {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${session.access_token}`,
+          'Content-Type': 'application/json',
+        },
+      })
+
+      if (!res.ok) {
+        console.error('Recalculate error:', res.status, await res.text())
+        return
+      }
+
+      const result = await res.json()
+      console.log('Recalculate result:', result)
+
+      // Reload anomalies
+      const { data: { user } } = await supabase.auth.getUser()
+      if (!user) return
+      const { data: appUser } = await (supabase as any)
+        .from('app_users')
+        .select('company_id')
+        .eq('auth_user_id', user.id)
+        .maybeSingle()
+
+      if (appUser?.company_id) {
+        const { data: anomalyRows } = await (supabase as any)
+          .from('corrosion_anomalies')
+          .select('*, cml_points!inner(location_label, equipment_id)')
+          .eq('company_id', appUser.company_id)
+          .order('anomaly_score', { ascending: false })
+
+        if (anomalyRows) {
+          const equipIds = [...new Set(anomalyRows.map((a: any) => a.cml_points?.equipment_id).filter(Boolean))]
+          const { data: equips } = await (supabase as any)
+            .from('equipment')
+            .select('id, tag')
+            .in('id', equipIds)
+          const tagMap: Record<string, string> = {}
+          for (const eq of equips || []) tagMap[eq.id] = eq.tag
+
+          setAnomalies(anomalyRows.map((a: any) => {
+            const rateMatch = (a.description || '').match(/rate ([\d.]+) mm/)
+            return {
+              id: a.id,
+              cml_point_id: a.cml_point_id,
+              equipment_id: a.cml_points?.equipment_id,
+              location_label: a.cml_points?.location_label || '—',
+              equipment_tag: tagMap[a.cml_points?.equipment_id] || '—',
+              anomaly_score: a.anomaly_score,
+              rate_mm_year: rateMatch ? parseFloat(rateMatch[1]) : null,
+              detected_at: a.detected_at,
+            }
+          }))
+        }
+      }
+    } catch (err) {
+      console.error('Recalculate error:', err)
+    } finally {
+      setRecalculating(false)
+    }
+  }, [supabase, recalculating])
+
+  /* ── Helpers ──────────────────────────────────────────────── */
+
+  function kpiZeros(): KPI[] {
+    return [
+      { label: 'Total Equipment', value: 0, icon: <LayoutDashboard className="h-5 w-5" />, color: 'blue', description: 'All registered equipment across all types' },
+      { label: 'Due ≤ 90 Days', value: 0, icon: <Clock className="h-5 w-5" />, color: 'amber', description: 'Active plans with due date within 90 days' },
+      { label: 'Due ≤ 60 Days', value: 0, icon: <Clock className="h-5 w-5" />, color: 'orange', description: 'Active plans with due date within 60 days' },
+      { label: 'Due ≤ 30 Days', value: 0, icon: <AlertTriangle className="h-5 w-5" />, color: 'red', description: 'Active plans with due date within 30 days' },
+      { label: 'Overdue', value: 0, icon: <AlertTriangle className="h-5 w-5" />, color: 'destructive', description: 'Active plans past their due date' },
+      { label: 'Non-Compliant', value: 0, icon: <ShieldAlert className="h-5 w-5" />, color: 'destructive', description: 'Equipment with at least 1 overdue plan' },
+    ]
+  }
+
+  function chartZeros(): ChartBar[] {
+    return [
+      { name: 'Safe', value: 0, fill: CHART_COLORS.safe },
+      { name: 'Due 90 Days', value: 0, fill: CHART_COLORS.due90 },
+      { name: 'Due 60 Days', value: 0, fill: CHART_COLORS.due60 },
+      { name: 'Due 30 & Overdue', value: 0, fill: CHART_COLORS.due30 },
+    ]
+  }
+
+  /* ── Color mapping ─────────────────────────────────────── */
+
+  const colorMap: Record<string, { bg: string; text: string; border: string; iconBg: string }> = {
+    blue:       { bg: 'bg-blue-50 dark:bg-blue-950/30',   text: 'text-blue-700 dark:text-blue-300',   border: 'border-blue-200 dark:border-blue-800',   iconBg: 'bg-blue-100 dark:bg-blue-900/40' },
+    amber:      { bg: 'bg-amber-50 dark:bg-amber-950/30',  text: 'text-amber-700 dark:text-amber-300',  border: 'border-amber-200 dark:border-amber-800',  iconBg: 'bg-amber-100 dark:bg-amber-900/40' },
+    orange:     { bg: 'bg-orange-50 dark:bg-orange-950/30', text: 'text-orange-700 dark:text-orange-300', border: 'border-orange-200 dark:border-orange-800', iconBg: 'bg-orange-100 dark:bg-orange-900/40' },
+    red:        { bg: 'bg-red-50 dark:bg-red-950/30',     text: 'text-red-700 dark:text-red-300',     border: 'border-red-200 dark:border-red-800',     iconBg: 'bg-red-100 dark:bg-red-900/40' },
+    destructive:{ bg: 'bg-red-50 dark:bg-red-950/30',     text: 'text-red-700 dark:text-red-300',     border: 'border-red-200 dark:border-red-800',     iconBg: 'bg-red-100 dark:bg-red-900/40' },
+  }
+
+  /* ── Render ─────────────────────────────────────────────── */
 
   return (
-    <div className="p-6">
+    <div className="px-8 py-8">
       {/* Header */}
       <div className="mb-6">
-        <h1 className="text-xl font-semibold">Dashboard</h1>
-        <p className="text-sm text-muted-foreground">Asset inspection & integrity overview</p>
+        <h1 className="text-2xl sm:text-3xl font-semibold tracking-tight">Dashboard</h1>
+        <p className="text-sm text-muted-foreground mt-1">
+          {userName ? `Welcome back, ${userName}` : 'Asset inspection & integrity overview'}
+        </p>
       </div>
 
-      {/* KPI Cards */}
-      {loading ? (
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-          {[1, 2, 3, 4].map(i => (
-            <div key={i} className="h-24 bg-card border border-border rounded-lg animate-pulse" />
+      {/* Tabs */}
+      <div className="border-b border-border mb-6">
+        <div className="flex gap-1 overflow-x-auto">
+          {tabs.map((tab) => (
+            <button
+              key={tab.key}
+              onClick={() => setActiveTab(tab.key)}
+              className={cn(
+                'flex items-center gap-2 px-4 py-3 text-sm font-medium border-b-2 transition-colors whitespace-nowrap',
+                activeTab === tab.key
+                  ? 'border-primary text-foreground'
+                  : 'border-transparent text-muted-foreground hover:text-foreground',
+              )}
+            >
+              {tab.icon}
+              <span>{tab.label}</span>
+            </button>
           ))}
         </div>
-      ) : (
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
-          {kpis.map((kpi) => (
-            <div key={kpi.label} className="bg-card border border-border rounded-lg p-4">
-              <p className="text-sm text-muted-foreground">{kpi.label}</p>
-              <p className="text-2xl font-bold mt-1">{kpi.value}</p>
+      </div>
+
+      {/* Tab Content — Overview */}
+      {activeTab === 'overview' && (
+        <>
+          {/* Filter Bar */}
+          <div className="flex flex-wrap items-center gap-3 mb-6">
+            {/* Plant Area */}
+            <div className="relative min-w-[180px]">
+              <select
+                value={filters.plantArea}
+                onChange={(e) => setFilters(prev => ({ ...prev, plantArea: e.target.value }))}
+                className="w-full rounded-lg border border-border bg-background px-3 py-2 text-sm appearance-none focus:outline-none focus:ring-1 focus:ring-primary"
+              >
+                <option value="">All Areas</option>
+                {plantAreas.map(a => <option key={a} value={a}>{a}</option>)}
+              </select>
             </div>
-          ))}
+
+            {/* Fluid Service */}
+            <div className="relative min-w-[180px]">
+              <select
+                value={filters.fluidService}
+                onChange={(e) => setFilters(prev => ({ ...prev, fluidService: e.target.value }))}
+                className="w-full rounded-lg border border-border bg-background px-3 py-2 text-sm appearance-none focus:outline-none focus:ring-1 focus:ring-primary"
+              >
+                <option value="">All Fluids</option>
+                {fluidServices.map(f => <option key={f} value={f}>{f}</option>)}
+              </select>
+            </div>
+
+            {/* Risk Category */}
+            <div className="relative min-w-[180px]">
+              <select
+                value={filters.riskCategory}
+                onChange={(e) => setFilters(prev => ({ ...prev, riskCategory: e.target.value }))}
+                className="w-full rounded-lg border border-border bg-background px-3 py-2 text-sm appearance-none focus:outline-none focus:ring-1 focus:ring-primary"
+              >
+                <option value="">All Risk Categories</option>
+                {riskCategories.map(r => <option key={r} value={r} className="capitalize">{r}</option>)}
+              </select>
+            </div>
+
+            {/* Clear */}
+            {(filters.plantArea || filters.fluidService || filters.riskCategory) && (
+              <button
+                onClick={() => setFilters({ plantArea: '', fluidService: '', riskCategory: '' })}
+                className="inline-flex items-center gap-1 rounded-lg border border-border px-3 py-2 text-sm text-muted-foreground hover:bg-accent transition-colors"
+              >
+                Clear filters
+              </button>
+            )}
+          </div>
+
+          {/* KPI Cards */}
+          {loading ? (
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+              {[1, 2, 3, 4, 5, 6].map(i => (
+                <div key={i} className="h-32 bg-card border border-border rounded-xl animate-pulse" />
+              ))}
+            </div>
+          ) : (
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+              {kpis.map((kpi) => {
+                const c = colorMap[kpi.color] || colorMap.blue
+                return (
+                  <div
+                    key={kpi.label}
+                    className={cn(
+                      'rounded-xl border p-5 transition-colors',
+                      c.bg, c.border,
+                    )}
+                  >
+                    <div className="flex items-start justify-between mb-3">
+                      <div className={cn('rounded-lg p-2', c.iconBg)}>
+                        <span className={c.text}>{kpi.icon}</span>
+                      </div>
+                    </div>
+                    <p className={cn('text-3xl font-bold tabular-nums', c.text)}>
+                      {kpi.value}
+                    </p>
+                    <p className="text-sm font-medium mt-1">{kpi.label}</p>
+                    <p className="text-xs text-muted-foreground mt-0.5">{kpi.description}</p>
+                  </div>
+                )
+              })}
+            </div>
+          )}
+
+          {/* Chart — Due Date Distribution */}
+          {!loading && (
+            <div className="mt-8">
+              <div className="rounded-xl border border-border bg-card p-6">
+                <h2 className="text-sm font-medium mb-1">Due Date Distribution</h2>
+                <p className="text-xs text-muted-foreground mb-4">
+                  Equipment count by due date zone
+                </p>
+                <div className="h-64">
+                  <ResponsiveContainer width="100%" height="100%">
+                    <BarChart data={chartData} margin={{ top: 8, right: 16, left: 0, bottom: 8 }}>
+                      <CartesianGrid strokeDasharray="3 3" className="stroke-border/50" />
+                      <XAxis
+                        dataKey="name"
+                        tick={{ fontSize: 12 }}
+                        className="text-muted-foreground"
+                      />
+                      <YAxis
+                        allowDecimals={false}
+                        tick={{ fontSize: 12 }}
+                        className="text-muted-foreground"
+                      />
+                      <Tooltip
+                        contentStyle={{
+                          fontSize: 12,
+                          borderRadius: 8,
+                          border: '1px solid var(--border)',
+                          background: 'var(--card)',
+                        }}
+                        formatter={(value: any) => [`${value} equipment`, '']}
+                      />
+                      <Bar dataKey="value" radius={[6, 6, 0, 0]} maxBarSize={80}>
+                        {chartData.map((entry, index) => (
+                          <Cell key={index} fill={entry.fill} />
+                        ))}
+                      </Bar>
+                    </BarChart>
+                  </ResponsiveContainer>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* Drill-Down Table */}
+          <div className="mt-8">
+            <h2 className="text-sm font-medium mb-1">Equipment Explorer</h2>
+            <p className="text-xs text-muted-foreground mb-3">
+              Click a row to drill down: Area → Equipment → Circuit → CML Point
+            </p>
+            <DrillDownTable />
+          </div>
+
+          {/* Refresh */}
+          <div className="mt-6 flex items-center gap-3">
+            <button
+              onClick={loadData}
+              disabled={loading}
+              className="inline-flex items-center gap-2 rounded-lg border border-border px-4 py-2 text-sm font-medium hover:bg-accent transition-colors disabled:opacity-50"
+            >
+              {loading ? (
+                <span className="h-4 w-4 animate-spin rounded-full border-2 border-muted-foreground border-t-transparent" />
+              ) : (
+                <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M3 12a9 9 0 0 1 9-9 9.75 9.75 0 0 1 6.74 2.74L21 8"/><path d="M21 3v5h-5"/><path d="M21 12a9 9 0 0 1-9 9 9.75 9.75 0 0 1-6.74-2.74L3 16"/><path d="M8 16H3v5"/></svg>
+              )}
+              Refresh
+            </button>
+            <span className="text-xs text-muted-foreground">
+              Real-time data — no cache
+            </span>
+          </div>
+        </>
+      )}
+
+      {/* Tab Content — My Worklist */}
+      {activeTab === 'worklist' && (
+        <div>
+          <div className="mb-4">
+            <h2 className="text-sm font-medium mb-1">My Inspection Worklist</h2>
+            <p className="text-xs text-muted-foreground">
+              {userRole === 'inspector'
+                ? 'Inspections assigned to you — sorted by date (newest first)'
+                : 'This view is for Inspector role'}
+            </p>
+          </div>
+
+          {userRole !== 'inspector' ? (
+            <div className="flex flex-col items-center justify-center py-16 text-center">
+              <div className="rounded-full bg-muted p-4 mb-4">
+                <Inbox className="h-6 w-6 text-muted-foreground" />
+              </div>
+              <h3 className="text-base font-medium text-muted-foreground mb-1">
+                No worklist
+              </h3>
+              <p className="text-sm text-muted-foreground/60">
+                This view is for Inspector role
+              </p>
+            </div>
+          ) : worklistLoading ? (
+            <div className="space-y-2">
+              {[1, 2, 3, 4, 5].map(i => (
+                <div key={i} className="h-12 bg-card border border-border rounded-lg animate-pulse" />
+              ))}
+            </div>
+          ) : worklist.length === 0 ? (
+            <div className="flex flex-col items-center justify-center py-16 text-center">
+              <div className="rounded-full bg-muted p-4 mb-4">
+                <CheckCircle2 className="h-6 w-6 text-green-500" />
+              </div>
+              <h3 className="text-base font-medium text-muted-foreground mb-1">
+                All clear
+              </h3>
+              <p className="text-sm text-muted-foreground/60">
+                No inspections assigned to you at this time
+              </p>
+            </div>
+          ) : (
+            <div className="rounded-xl border border-border overflow-hidden">
+              <table className="w-full text-sm">
+                <thead>
+                  <tr className="bg-muted/50">
+                    <th className="text-left px-4 py-3 font-medium text-muted-foreground">Equipment Tag</th>
+                    <th className="text-left px-4 py-3 font-medium text-muted-foreground">Inspection Type</th>
+                    <th className="text-left px-4 py-3 font-medium text-muted-foreground">Event Date</th>
+                    <th className="text-left px-4 py-3 font-medium text-muted-foreground">Status</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {worklist.map((item) => {
+                    const statusConfig: Record<string, { bg: string; text: string; label: string }> = {
+                      approved:  { bg: 'bg-green-100 dark:bg-green-900/30', text: 'text-green-700 dark:text-green-300', label: 'Approved' },
+                      submitted: { bg: 'bg-amber-100 dark:bg-amber-900/30', text: 'text-amber-700 dark:text-amber-300', label: 'Submitted' },
+                      draft:     { bg: 'bg-gray-100 dark:bg-gray-800',      text: 'text-gray-600 dark:text-gray-400',   label: 'Draft' },
+                      rejected:  { bg: 'bg-red-100 dark:bg-red-900/30',     text: 'text-red-700 dark:text-red-300',     label: 'Rejected' },
+                    }
+                    const sc = statusConfig[item.status] || statusConfig.draft
+                    return (
+                      <tr key={item.id} className="border-t border-border hover:bg-muted/30 transition-colors">
+                        <td className="px-4 py-3 font-medium">{item.equipment_tag}</td>
+                        <td className="px-4 py-3">{formatInspectionType(item.inspection_type)}</td>
+                        <td className="px-4 py-3 tabular-nums">{item.event_date}</td>
+                        <td className="px-4 py-3">
+                          <span className={cn('inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-medium', sc.bg, sc.text)}>
+                            {sc.label}
+                          </span>
+                        </td>
+                      </tr>
+                    )
+                  })}
+                </tbody>
+              </table>
+              <div className="px-4 py-2 bg-muted/30 border-t border-border text-xs text-muted-foreground">
+                {worklist.length} inspection{worklist.length !== 1 ? 's' : ''} assigned
+              </div>
+            </div>
+          )}
         </div>
       )}
 
-      {/* Placeholder sections */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        <div className="bg-card border border-border rounded-lg p-6">
-          <h2 className="text-sm font-medium mb-4">Quick Actions</h2>
-          <div className="space-y-2">
-            <button className="w-full text-left px-3 py-2 rounded-md text-sm hover:bg-accent transition-colors">
-              ➕ New Equipment
-            </button>
-            <button className="w-full text-left px-3 py-2 rounded-md text-sm hover:bg-accent transition-colors">
-              📋 New Inspection
-            </button>
-            <button className="w-full text-left px-3 py-2 rounded-md text-sm hover:bg-accent transition-colors">
-              📅 View Approval Schedule
-            </button>
+      {/* Tab Content — Pending Approval */}
+      {activeTab === 'pending' && (
+        <div>
+          <div className="mb-6">
+            <h2 className="text-sm font-medium mb-1">Pending Approvals</h2>
+            <p className="text-xs text-muted-foreground">
+              Inspection plans awaiting engineer approval
+            </p>
           </div>
-        </div>
 
-        <div className="bg-card border border-border rounded-lg p-6">
-          <h2 className="text-sm font-medium mb-4">Status Overview</h2>
-          <div className="space-y-3">
-            <div className="flex items-center justify-between text-sm">
-              <span className="text-muted-foreground">Equipment Aktif</span>
-              <span className="font-medium">—</span>
+          {pendingLoading ? (
+            <div className="h-48 bg-card border border-border rounded-xl animate-pulse" />
+          ) : (
+            <div className="flex flex-col items-center py-8">
+              <div className="rounded-2xl border border-border bg-card p-8 text-center max-w-md w-full">
+                <div className="rounded-full bg-amber-50 dark:bg-amber-950/30 p-4 w-fit mx-auto mb-4">
+                  <Clock className="h-8 w-8 text-amber-600 dark:text-amber-400" />
+                </div>
+                <p className="text-5xl font-bold tabular-nums text-amber-600 dark:text-amber-400 mb-2">
+                  {pendingCount}
+                </p>
+                <p className="text-base font-medium text-muted-foreground mb-1">
+                  Pending Approval{pendingCount !== 1 ? 's' : ''}
+                </p>
+                <p className="text-sm text-muted-foreground/60 mb-6">
+                  {pendingCount === 0
+                    ? 'All plans have been reviewed — great job!'
+                    : 'Plans waiting for engineer review and approval'}
+                </p>
+                <Link
+                  href="/plans"
+                  className="inline-flex items-center gap-2 rounded-lg bg-primary px-5 py-2.5 text-sm font-medium text-primary-foreground hover:opacity-90 transition-opacity"
+                >
+                  Go to Planning & Approval
+                  <ExternalLink className="h-4 w-4" />
+                </Link>
+              </div>
             </div>
-            <div className="flex items-center justify-between text-sm">
-              <span className="text-muted-foreground">Non-Compliant</span>
-              <span className="font-medium">—</span>
-            </div>
-            <div className="flex items-center justify-between text-sm">
-              <span className="text-muted-foreground">Overdue Inspection</span>
-              <span className="font-medium">—</span>
-            </div>
-          </div>
+          )}
         </div>
-      </div>
+      )}
+
+      {/* Tab Content — Workload */}
+      {activeTab === 'workload' && (
+        <div>
+          <div className="mb-4">
+            <h2 className="text-sm font-medium mb-1">Inspector Workload</h2>
+            <p className="text-xs text-muted-foreground">
+              {userRole === 'supervisor' || userRole === 'super_admin'
+                ? 'Inspection completion overview by inspector'
+                : 'This view is for Supervisor role'}
+            </p>
+          </div>
+
+          {userRole !== 'supervisor' && userRole !== 'super_admin' ? (
+            <div className="flex flex-col items-center justify-center py-16 text-center">
+              <div className="rounded-full bg-muted p-4 mb-4">
+                <Inbox className="h-6 w-6 text-muted-foreground" />
+              </div>
+              <h3 className="text-base font-medium text-muted-foreground mb-1">
+                No access
+              </h3>
+              <p className="text-sm text-muted-foreground/60">
+                This view is for Supervisor role
+              </p>
+            </div>
+          ) : workloadLoading ? (
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+              {[1, 2, 3].map(i => (
+                <div key={i} className="h-48 bg-card border border-border rounded-xl animate-pulse" />
+              ))}
+            </div>
+          ) : workload.length === 0 ? (
+            <div className="flex flex-col items-center justify-center py-16 text-center">
+              <div className="rounded-full bg-muted p-4 mb-4">
+                <UserCircle className="h-6 w-6 text-muted-foreground" />
+              </div>
+              <h3 className="text-base font-medium text-muted-foreground mb-1">
+                No inspectors
+              </h3>
+              <p className="text-sm text-muted-foreground/60">
+                No active inspectors found in your company
+              </p>
+            </div>
+          ) : (
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+              {workload.map((insp) => (
+                <div
+                  key={insp.id}
+                  className="rounded-xl border border-border bg-card p-5 transition-colors hover:border-primary/30"
+                >
+                  <div className="flex items-center gap-3 mb-4">
+                    <div className="rounded-full bg-blue-100 dark:bg-blue-900/40 p-2">
+                      <UserCircle className="h-5 w-5 text-blue-600 dark:text-blue-400" />
+                    </div>
+                    <div>
+                      <p className="font-medium text-sm">{insp.full_name}</p>
+                      <p className="text-xs text-muted-foreground">Inspector</p>
+                    </div>
+                  </div>
+
+                  <div className="grid grid-cols-2 gap-3 mb-4">
+                    <div>
+                      <p className="text-2xl font-bold tabular-nums">{insp.total}</p>
+                      <p className="text-xs text-muted-foreground">Total Assigned</p>
+                    </div>
+                    <div>
+                      <p className="text-2xl font-bold tabular-nums text-green-600 dark:text-green-400">{insp.done}</p>
+                      <p className="text-xs text-muted-foreground">Completed</p>
+                    </div>
+                  </div>
+
+                  {/* Completion rate bar */}
+                  <div className="mb-3">
+                    <div className="flex items-center justify-between mb-1">
+                      <span className="text-xs text-muted-foreground">Completion Rate</span>
+                      <span className="text-xs font-medium tabular-nums">{insp.completionRate}%</span>
+                    </div>
+                    <div className="h-2 rounded-full bg-muted overflow-hidden">
+                      <div
+                        className={cn(
+                          'h-full rounded-full transition-all',
+                          insp.completionRate >= 80 ? 'bg-green-500' :
+                          insp.completionRate >= 50 ? 'bg-amber-500' : 'bg-red-500'
+                        )}
+                        style={{ width: `${insp.completionRate}%` }}
+                      />
+                    </div>
+                  </div>
+
+                  {insp.overdue > 0 && (
+                    <div className="flex items-center gap-1.5 rounded-lg bg-red-50 dark:bg-red-950/30 px-3 py-1.5">
+                      <AlertTriangle className="h-3.5 w-3.5 text-red-500" />
+                      <span className="text-xs font-medium text-red-700 dark:text-red-300">
+                        {insp.overdue} overdue
+                      </span>
+                    </div>
+                  )}
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* Tab Content — Anomaly Detection */}
+      {activeTab === 'anomaly' && (
+        <div>
+          <div className="flex items-center justify-between mb-4">
+            <div>
+              <h2 className="text-sm font-medium mb-1">Corrosion Anomaly Detection</h2>
+              <p className="text-xs text-muted-foreground">
+                Readings flagged as anomalous by z-score analysis — sorted by severity
+              </p>
+            </div>
+            <button
+              onClick={handleRecalculate}
+              disabled={recalculating}
+              className="inline-flex items-center gap-2 rounded-lg border border-border px-4 py-2 text-sm font-medium hover:bg-accent transition-colors disabled:opacity-50"
+            >
+              <RefreshCw className={cn('h-4 w-4', recalculating && 'animate-spin')} />
+              {recalculating ? 'Recalculating...' : 'Recalculate'}
+            </button>
+          </div>
+
+          {anomaliesLoading ? (
+            <div className="rounded-xl border border-border">
+              {[1, 2, 3].map(i => (
+                <div key={i} className="h-16 bg-card border-b border-border animate-pulse last:border-b-0" />
+              ))}
+            </div>
+          ) : anomalies.length === 0 ? (
+            <div className="flex flex-col items-center justify-center py-20 text-center">
+              <div className="rounded-full bg-muted p-4 mb-4">
+                <AlertTriangle className="h-6 w-6 text-muted-foreground" />
+              </div>
+              <h3 className="text-base font-medium text-muted-foreground mb-1">
+                No anomalies detected yet
+              </h3>
+              <p className="text-sm text-muted-foreground/60 max-w-sm">
+                Click Recalculate to run z-score anomaly detection across all CML points
+              </p>
+            </div>
+          ) : (
+            <div className="rounded-xl border border-border overflow-hidden">
+              <table className="w-full text-sm">
+                <thead>
+                  <tr className="bg-muted/50">
+                    <th className="text-left px-4 py-3 font-medium text-muted-foreground">Equipment Tag</th>
+                    <th className="text-left px-4 py-3 font-medium text-muted-foreground">CML Location</th>
+                    <th className="text-right px-4 py-3 font-medium text-muted-foreground">Anomaly Score</th>
+                    <th className="text-right px-4 py-3 font-medium text-muted-foreground">Rate (mm/yr)</th>
+                    <th className="text-left px-4 py-3 font-medium text-muted-foreground">Detected</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {anomalies.map((a: any) => (
+                    <tr
+                      key={a.id}
+                      onClick={() => {
+                        if (a.equipment_id) {
+                          window.location.href = `/equipment/${a.equipment_id}`
+                        }
+                      }}
+                      className="border-t border-border hover:bg-muted/30 transition-colors cursor-pointer"
+                    >
+                      <td className="px-4 py-3 font-medium">{a.equipment_tag}</td>
+                      <td className="px-4 py-3 text-muted-foreground">{a.location_label}</td>
+                      <td className="px-4 py-3 text-right">
+                        <span className="inline-flex items-center rounded-full bg-red-100 dark:bg-red-900/30 px-2.5 py-0.5 text-xs font-medium text-red-700 dark:text-red-300">
+                          {Number(a.anomaly_score).toFixed(2)}σ
+                        </span>
+                      </td>
+                      <td className="px-4 py-3 text-right tabular-nums">
+                        {a.rate_mm_year ? `${a.rate_mm_year.toFixed(4)}` : '—'}
+                      </td>
+                      <td className="px-4 py-3 text-xs text-muted-foreground">
+                        {a.detected_at ? new Date(a.detected_at).toLocaleDateString('en-GB', {
+                          day: 'numeric', month: 'short', year: 'numeric',
+                        }) : '—'}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+              <div className="px-4 py-2 bg-muted/30 border-t border-border text-xs text-muted-foreground">
+                {anomalies.length} anomaly{anomalies.length !== 1 ? 'ies' : 'y'} found — sorted by severity
+              </div>
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* Tab Content — Remaining Life & Fleet Risk (Coming Soon) */}
+      {(activeTab === 'rl' || activeTab === 'fleet') && (
+        <div className="flex flex-col items-center justify-center py-20 text-center">
+          <div className="rounded-full bg-muted p-4 mb-4">
+            {tabs.find(t => t.key === activeTab)?.icon}
+          </div>
+          <h2 className="text-lg font-semibold text-muted-foreground mb-1">
+            {tabs.find(t => t.key === activeTab)?.label}
+          </h2>
+          <p className="text-sm text-muted-foreground/60">Coming Soon</p>
+        </div>
+      )}
     </div>
   )
 }

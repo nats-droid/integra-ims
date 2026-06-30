@@ -33,6 +33,8 @@ import {
   Shield,
   AlertTriangle,
   Info,
+  RefreshCw,
+  TrendingDown,
 } from 'lucide-react'
 
 type Equipment = Database['public']['Tables']['equipment']['Row']
@@ -51,6 +53,28 @@ type MaintenanceLog = {
   log_type: 'finding' | 'repair' | 'replacement' | 'other'
   severity: 'minor' | 'major' | 'critical' | null
   created_at: string
+}
+
+type RLPrediction = {
+  id: string
+  cml_point_id: string
+  predicted_rl_years: number | null
+  confidence_low: number | null
+  confidence_high: number | null
+  model_version: string | null
+  computed_at: string
+}
+
+function timeAgo(dateStr: string): string {
+  const diffMs = Date.now() - new Date(dateStr).getTime()
+  const diffMin = Math.floor(diffMs / 60000)
+  if (diffMin < 1) return 'just now'
+  if (diffMin < 60) return `${diffMin} minute${diffMin > 1 ? 's' : ''} ago`
+  const diffHr = Math.floor(diffMin / 60)
+  if (diffHr < 24) return `${diffHr} hour${diffHr > 1 ? 's' : ''} ago`
+  const diffDay = Math.floor(diffHr / 24)
+  if (diffDay < 30) return `${diffDay} day${diffDay > 1 ? 's' : ''} ago`
+  return new Date(dateStr).toLocaleDateString()
 }
 
 interface CircuitWithCMLs extends Circuit {
@@ -106,6 +130,14 @@ export default function EquipmentDetailPage() {
   const [activeTab, setActiveTab] = useState<Tab>('details')
   const [dmResult, setDmResult] = useState<DMResponse | null>(null)
   const [dmLoading, setDmLoading] = useState(false)
+  const [userRole, setUserRole] = useState<string>('')
+  const [editingCmlId, setEditingCmlId] = useState<string | null>(null)
+  const [editValue, setEditValue] = useState<string>('')
+  const [savingCmlId, setSavingCmlId] = useState<string | null>(null)
+  const [rlPredictions, setRlPredictions] = useState<Record<string, RLPrediction>>({})
+  const [recalculating, setRecalculating] = useState(false)
+
+  const canEditTRequired = userRole === 'engineer' || userRole === 'supervisor' || userRole === 'super_admin'
 
   const fetchData = useCallback(async () => {
     if (!id) return
@@ -178,6 +210,23 @@ export default function EquipmentDetailPage() {
         })
       }
 
+      // Fetch rl_predictions for all CML points
+      const allCmlIds = circuitsWithCMLs.flatMap(c => c.cml_points.map(cml => cml.id))
+      if (allCmlIds.length > 0) {
+        const { data: rlData } = await sb
+          .from('rl_predictions')
+          .select('*')
+          .in('cml_point_id', allCmlIds)
+
+        const rlMap: Record<string, RLPrediction> = {}
+        for (const pred of (rlData || []) as RLPrediction[]) {
+          rlMap[pred.cml_point_id] = pred
+        }
+        setRlPredictions(rlMap)
+      } else {
+        setRlPredictions({})
+      }
+
       const { data: inspectionsRaw } = await sb
         .from('inspection_events')
         .select('*')
@@ -232,6 +281,108 @@ export default function EquipmentDetailPage() {
       setLoading(false)
     }
   }, [id, sb, router])
+
+  // Fetch user role for RBAC
+  useEffect(() => {
+    const fetchRole = async () => {
+      const { data: { user } } = await supabase.auth.getUser()
+      if (!user) return
+      const { data: appUser } = await sb
+        .from('app_users')
+        .select('role')
+        .eq('auth_user_id', user.id)
+        .maybeSingle()
+      if (appUser?.role) setUserRole(appUser.role)
+    }
+    fetchRole()
+  }, [supabase, sb])
+
+  // Save t_required_manual for a CML point
+  const saveTRequired = useCallback(async (cmlId: string, tMin: number | null) => {
+    const val = parseFloat(editValue)
+    if (isNaN(val) || val <= 0) {
+      toast.error('Value must be a positive number')
+      return
+    }
+    if (tMin != null && val >= tMin) {
+      // Warning only, don't block
+      const proceed = confirm(`t_required (${val} mm) >= t_min (${tMin} mm). This is unusual but may be valid if corrosion allowance is very small. Continue?`)
+      if (!proceed) return
+    }
+
+    setSavingCmlId(cmlId)
+    try {
+      const { error } = await sb
+        .from('cml_points')
+        .update({ t_required_manual: val })
+        .eq('id', cmlId)
+      if (error) throw error
+
+      // Update local state
+      setData((prev) => {
+        if (!prev) return prev
+        return {
+          ...prev,
+          circuits: prev.circuits.map((c) => ({
+            ...c,
+            cml_points: c.cml_points.map((cml) =>
+              cml.id === cmlId ? { ...cml, t_required_manual: val } : cml
+            ),
+          })),
+        }
+      })
+      setEditingCmlId(null)
+      setEditValue('')
+      toast.success('t_required saved')
+    } catch (err) {
+      console.error('Save t_required error:', err)
+      toast.error('Failed to save t_required')
+    } finally {
+      setSavingCmlId(null)
+    }
+  }, [editValue, sb])
+
+  // Recalculate RL for all CML points in this equipment
+  const handleRecalculate = useCallback(async () => {
+    setRecalculating(true)
+    try {
+      const { data: { session } } = await supabase.auth.getSession()
+      if (!session?.access_token) {
+        toast.error('Not authenticated')
+        return
+      }
+
+      const backendUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000'
+      const res = await fetch(`${backendUrl}/api/v1/rl-confidence/recalculate`, {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${session.access_token}`,
+          'Content-Type': 'application/json',
+        },
+      })
+
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({ detail: 'Unknown error' }))
+        toast.error(`Recalculate failed: ${err.detail || res.statusText}`)
+        return
+      }
+
+      const result = await res.json()
+      const skippedCount = Array.isArray(result.skipped) ? result.skipped.length : result.skipped
+      toast.success(
+        `Recalculate complete: ${result.calculated} calculated, ${skippedCount} skipped (missing t_required)`,
+        { duration: 5000 }
+      )
+
+      // Refresh data to show new predictions
+      fetchData()
+    } catch (err) {
+      console.error('Recalculate error:', err)
+      toast.error('Failed to recalculate')
+    } finally {
+      setRecalculating(false)
+    }
+  }, [supabase, fetchData])
 
   const fetchDmResults = useCallback(async (eq: Equipment) => {
     if (!eq.material && !eq.fluid_service) return
@@ -452,6 +603,21 @@ export default function EquipmentDetailPage() {
 
   const renderCircuitsTab = () => (
     <div className="space-y-6">
+      {/* Recalculate button */}
+      {canEditTRequired && circuits.some(c => c.cml_points.length > 0) && (
+        <div className="flex items-center justify-between">
+          <div />
+          <button
+            onClick={handleRecalculate}
+            disabled={recalculating}
+            className="inline-flex items-center gap-2 rounded-lg border border-border px-4 py-2 text-sm font-medium hover:bg-accent transition-colors disabled:opacity-50"
+          >
+            <RefreshCw className={`h-4 w-4 ${recalculating ? 'animate-spin' : ''}`} />
+            {recalculating ? 'Recalculating...' : 'Recalculate Remaining Life'}
+          </button>
+        </div>
+      )}
+
       {circuits.length === 0 ? (
         <div className="rounded-xl border border-border/70 p-8 text-center text-muted-foreground">
           <GitBranch className="h-8 w-8 mx-auto mb-2" />
@@ -479,29 +645,136 @@ export default function EquipmentDetailPage() {
 
             {circuit.cml_points.length > 0 && (
               <div className="divide-y divide-border">
-                {circuit.cml_points.map((cml) => (
-                  <div key={cml.id} className="px-6 py-3.5 hover:bg-muted/20">
-                    <div className="flex items-center justify-between">
-                      <div className="flex items-center gap-2">
-                        <CircleDot className="h-3.5 w-3.5 text-muted-foreground" />
-                        <span className="text-sm font-medium">{cml.location_label}</span>
-                        <span className="text-xs text-muted-foreground capitalize">
-                          ({cml.cml_type})
-                        </span>
+                {circuit.cml_points.map((cml) => {
+                  const isEditing = editingCmlId === cml.id
+                  const tReq = (cml as any).t_required_manual as number | null
+                  const tMinVal = cml.t_min as number | null
+                  const showWarning = isEditing && editValue && tMinVal != null && parseFloat(editValue) >= tMinVal
+                  const pred = rlPredictions[cml.id]
+                  const isLowConfidence = pred != null && (pred.confidence_low == null || pred.confidence_high == null)
+
+                  return (
+                    <div key={cml.id} className="px-6 py-3.5 hover:bg-muted/20">
+                      <div className="flex items-center justify-between">
+                        <div className="flex items-center gap-2">
+                          <CircleDot className="h-3.5 w-3.5 text-muted-foreground" />
+                          <span className="text-sm font-medium">{cml.location_label}</span>
+                          <span className="text-xs text-muted-foreground capitalize">
+                            ({cml.cml_type})
+                          </span>
+                        </div>
+                        <div className="flex items-center gap-3 text-xs text-muted-foreground">
+                          <span>
+                            t_nom: {cml.nominal_thickness} mm
+                            {cml.t_min != null && ` | t_min: ${cml.t_min} mm`}
+                            {cml.readings.length > 0 && ` | Latest: ${cml.readings[0].reading_mm} mm`}
+                          </span>
+                        </div>
                       </div>
-                      <span className="text-xs text-muted-foreground">
-                        t_nom: {cml.nominal_thickness} mm
-                        {cml.t_min != null && ` | t_min: ${cml.t_min} mm`}
-                        {cml.readings.length > 0 && (
-                          <>
-                            {' | '}
-                            Latest: {cml.readings[0].reading_mm} mm
-                          </>
+                      {/* Row 2: t_required_manual */}
+                      <div className="mt-1.5 ml-6 flex items-center gap-2 text-xs">
+                        <span className="text-muted-foreground">t_required:</span>
+                        {isEditing ? (
+                          <div className="flex items-center gap-1.5">
+                            <input
+                              type="number"
+                              step="0.01"
+                              min="0"
+                              value={editValue}
+                              onChange={(e) => setEditValue(e.target.value)}
+                              className="w-20 rounded border border-input bg-background px-1.5 py-0.5 text-xs"
+                              autoFocus
+                              disabled={savingCmlId === cml.id}
+                              onKeyDown={(e) => {
+                                if (e.key === 'Enter') saveTRequired(cml.id, tMinVal)
+                                if (e.key === 'Escape') { setEditingCmlId(null); setEditValue('') }
+                              }}
+                            />
+                            <span className="text-muted-foreground">mm</span>
+                            <button
+                              onClick={() => saveTRequired(cml.id, tMinVal)}
+                              disabled={savingCmlId === cml.id}
+                              className="rounded bg-primary px-1.5 py-0.5 text-primary-foreground hover:opacity-90 disabled:opacity-50"
+                            >
+                              {savingCmlId === cml.id ? '...' : 'Save'}
+                            </button>
+                            <button
+                              onClick={() => { setEditingCmlId(null); setEditValue('') }}
+                              disabled={savingCmlId === cml.id}
+                              className="rounded border border-border px-1.5 py-0.5 text-muted-foreground hover:bg-muted"
+                            >
+                              Cancel
+                            </button>
+                          </div>
+                        ) : (
+                          <div className="flex items-center gap-1.5">
+                            {tReq != null ? (
+                              <span className="font-medium text-foreground">{tReq} mm</span>
+                            ) : (
+                              <span className="text-muted-foreground/60">— not set</span>
+                            )}
+                            {canEditTRequired && (
+                              <button
+                                onClick={() => {
+                                  setEditingCmlId(cml.id)
+                                  setEditValue(tReq != null ? String(tReq) : '')
+                                }}
+                                className="rounded border border-border px-1.5 py-0.5 text-muted-foreground hover:bg-muted"
+                              >
+                                {tReq != null ? 'Edit' : 'Set'}
+                              </button>
+                            )}
+                          </div>
                         )}
-                      </span>
+                      </div>
+                      {/* Validation warning */}
+                      {showWarning && (
+                        <div className="ml-6 mt-1 text-xs text-yellow-600 dark:text-yellow-400">
+                          Warning: t_required should typically be less than t_min ({tMinVal} mm)
+                        </div>
+                      )}
+                      {/* Row 3: Remaining Life prediction */}
+                      {tReq != null ? (
+                        pred ? (
+                          <div className="mt-2 ml-6 space-y-1">
+                            <div className="flex items-center gap-2 text-xs">
+                              <TrendingDown className="h-3.5 w-3.5 text-emerald-600 dark:text-emerald-400" />
+                              <span className="text-muted-foreground">Remaining Life:</span>
+                              <span className="font-semibold text-foreground">
+                                {pred.predicted_rl_years != null ? `${pred.predicted_rl_years.toFixed(2)} years` : '—'}
+                              </span>
+                              {isLowConfidence && (
+                                <span className="inline-flex items-center gap-1 rounded-full bg-yellow-100 dark:bg-yellow-900/30 px-2 py-0.5 text-[10px] font-medium text-yellow-800 dark:text-yellow-400">
+                                  <AlertTriangle className="h-2.5 w-2.5" />
+                                  Low Confidence
+                                </span>
+                              )}
+                            </div>
+                            {!isLowConfidence && pred.confidence_low != null && pred.confidence_high != null && (
+                              <div className="flex items-center gap-2 text-xs text-muted-foreground ml-6">
+                                <span>95% CI: {pred.confidence_low.toFixed(2)} — {pred.confidence_high.toFixed(2)} years</span>
+                              </div>
+                            )}
+                            <div className="flex items-center gap-1.5 text-[10px] text-muted-foreground/50 ml-6">
+                              <Clock className="h-2.5 w-2.5" />
+                              <span>Calculated {timeAgo(pred.computed_at)}</span>
+                            </div>
+                          </div>
+                        ) : (
+                          <div className="mt-1.5 ml-6 flex items-center gap-1.5 text-xs text-muted-foreground/60">
+                            <TrendingDown className="h-3 w-3" />
+                            <span>— Not calculated yet</span>
+                          </div>
+                        )
+                      ) : (
+                        <div className="mt-1.5 ml-6 flex items-center gap-1.5 text-xs text-muted-foreground/40">
+                          <TrendingDown className="h-3 w-3" />
+                          <span>— Set t_required to enable RL calculation</span>
+                        </div>
+                      )}
                     </div>
-                  </div>
-                ))}
+                  )
+                })}
               </div>
             )}
           </div>
