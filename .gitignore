@@ -53,3 +53,4 @@ supabase/.temp
 # Dev auth utilities (not for production)
 frontend/.htpasswd
 frontend/public/set_session.html
+pw_*.py

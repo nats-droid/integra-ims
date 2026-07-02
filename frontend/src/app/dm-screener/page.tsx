@@ -1,8 +1,10 @@
 'use client'
 
-import { useState, useCallback } from 'react'
-import { Search, Shield, AlertTriangle, Info, FlaskConical, Zap, Thermometer, Wrench, BookOpen, Loader2 } from 'lucide-react'
+import { useState, useCallback, useEffect } from 'react'
+import { Search, Shield, AlertTriangle, Info, FlaskConical, Zap, Thermometer, Wrench, BookOpen, Loader2, CircleCheckBig, XCircle } from 'lucide-react'
 import AppLayout from '@/components/layout/app-layout'
+import { createClient } from '@/lib/supabase/client'
+import { toast } from 'sonner'
 
 // ── Types ────────────────────────────────────────────────────────────────────
 interface DM {
@@ -106,6 +108,28 @@ export default function DmScreenerPage() {
   const [loading, setLoading] = useState(false)
   const [result, setResult] = useState<DMResponse | null>(null)
   const [error, setError] = useState('')
+  const [userRole, setUserRole] = useState<string>('')
+  const [companyId, setCompanyId] = useState<string>('')
+  const [validating, setValidating] = useState(false)
+
+  // Fetch user role and company_id for Validate All
+  useEffect(() => {
+    const fetchUser = async () => {
+      const supabase = createClient()
+      const { data: { user } } = await supabase.auth.getUser()
+      if (!user) return
+      const { data: appUser } = await supabase
+        .from('app_users')
+        .select('role, company_id')
+        .eq('auth_user_id', user.id)
+        .maybeSingle()
+      if (appUser) {
+        setUserRole((appUser as any).role || '')
+        setCompanyId((appUser as any).company_id || '')
+      }
+    }
+    fetchUser()
+  }, [])
 
   // Quick sample assets (from reference dm_screener_pro.html)
   const samples = [
@@ -113,6 +137,33 @@ export default function DmScreenerPage() {
     { label: 'Sour Hydrocarbon Line', mat: 'Carbon Steel', fluid: 'Sour Hydrocarbon', tmin: '20', tmax: '320', pwht: false },
     { label: 'H2 Service Exchanger', mat: 'Low Alloy', fluid: 'Hydrogen (H2)', tmin: '40', tmax: '380', pwht: true },
   ]
+
+  const validateAll = useCallback(async () => {
+    if (!companyId) {
+      toast.error('Company ID not found')
+      return
+    }
+    setValidating(true)
+    try {
+      const backendUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000'
+      const res = await fetch(`${backendUrl}/api/v1/analytics/dm-validation/${companyId}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+      })
+      if (!res.ok) throw new Error('Validation request failed')
+      const data = await res.json()
+      const avg = data.results.length > 0
+        ? (data.results.reduce((s: number, r: any) => s + r.match_score, 0) / data.results.length * 100).toFixed(0)
+        : 'N/A'
+      toast.success(
+        `Validation complete: ${data.total_validated} equipment validated. Average match score: ${avg}%`
+      )
+    } catch (e: any) {
+      toast.error('Validation failed. Please retry.')
+    } finally {
+      setValidating(false)
+    }
+  }, [companyId])
 
   const loadSample = useCallback((s: typeof samples[0]) => {
     setMaterial(s.mat)
@@ -186,9 +237,24 @@ export default function DmScreenerPage() {
               Rule-based damage mechanism identification — API 571 compliant
             </p>
           </div>
-          <div className="flex items-center gap-1 text-xs text-muted-foreground bg-muted px-3 py-1.5 rounded-full">
-            <BookOpen className="h-3.5 w-3.5" />
-            {result ? `${result.total_matched} / ${result.total_screened} DM matched` : '67 API 571 DMs'}
+          <div className="flex items-center gap-2">
+            {(userRole === 'engineer' || userRole === 'supervisor' || userRole === 'super_admin') && (
+              <button
+                onClick={validateAll}
+                disabled={validating}
+                className="inline-flex items-center gap-2 text-xs font-medium px-3 py-1.5 rounded-lg border border-border hover:bg-accent transition-colors disabled:opacity-50"
+              >
+                {validating ? (
+                  <><Loader2 className="h-3.5 w-3.5 animate-spin" /> Validating...</>
+                ) : (
+                  <><CircleCheckBig className="h-3.5 w-3.5" /> Validate All</>
+                )}
+              </button>
+            )}
+            <div className="flex items-center gap-1 text-xs text-muted-foreground bg-muted px-3 py-1.5 rounded-full">
+              <BookOpen className="h-3.5 w-3.5" />
+              {result ? `${result.total_matched} / ${result.total_screened} DM matched` : '67 API 571 DMs'}
+            </div>
           </div>
         </div>
 

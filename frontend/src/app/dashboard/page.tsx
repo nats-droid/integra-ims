@@ -143,6 +143,12 @@ export default function DashboardPage() {
   const [anomaliesLoading, setAnomaliesLoading] = useState(false)
   const [recalculating, setRecalculating] = useState(false)
 
+  // Fleet Risk state
+  const [fleetRiskData, setFleetRiskData] = useState<any>(null)
+  const [fleetRiskLoading, setFleetRiskLoading] = useState(false)
+  const [fleetRecalculating, setFleetRecalculating] = useState(false)
+  const [fleetLastComputed, setFleetLastComputed] = useState<string | null>(null)
+
   // Filter state
   const [filters, setFilters] = useState<FilterState>({
     plantArea: '',
@@ -600,6 +606,38 @@ export default function DashboardPage() {
     load()
   }, [activeTab, companyId, supabase])
 
+  /* ── Load fleet risk snapshot ─────────────────────────────── */
+
+  useEffect(() => {
+    if (activeTab !== 'fleet' || !companyId) return
+    async function load() {
+      setFleetRiskLoading(true)
+      try {
+        const { data: snapshots } = await (supabase as any)
+          .from('fleet_risk_snapshots')
+          .select('risk_summary, computed_at')
+          .eq('company_id', companyId)
+          .order('computed_at', { ascending: false })
+          .limit(1)
+
+        if (snapshots && snapshots.length > 0) {
+          const snap = snapshots[0]
+          setFleetRiskData(snap.risk_summary)
+          setFleetLastComputed(snap.computed_at)
+        } else {
+          setFleetRiskData(null)
+          setFleetLastComputed(null)
+        }
+      } catch (err) {
+        console.error('Fleet risk load error:', err)
+        setFleetRiskData(null)
+      } finally {
+        setFleetRiskLoading(false)
+      }
+    }
+    load()
+  }, [activeTab, companyId, supabase])
+
   /* ── Recalculate anomalies ─────────────────────────────── */
 
   const handleRecalculate = useCallback(async () => {
@@ -676,6 +714,42 @@ export default function DashboardPage() {
     }
   }, [supabase, recalculating])
 
+  /* ── Recalculate fleet risk ─────────────────────────────── */
+
+  const handleFleetRecalculate = useCallback(async () => {
+    if (fleetRecalculating) return
+    setFleetRecalculating(true)
+    try {
+      const { data: { session } } = await supabase.auth.getSession()
+      if (!session?.access_token) {
+        console.error('No auth session')
+        return
+      }
+
+      const backendUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000'
+      const res = await fetch(`${backendUrl}/api/v1/analytics/fleet-risk/${companyId}`, {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${session.access_token}`,
+          'Content-Type': 'application/json',
+        },
+      })
+
+      if (!res.ok) {
+        console.error('Fleet risk recalculate error:', res.status, await res.text())
+        return
+      }
+
+      const result = await res.json()
+      setFleetRiskData(result)
+      setFleetLastComputed(result.computed_at)
+    } catch (err) {
+      console.error('Fleet risk recalculate error:', err)
+    } finally {
+      setFleetRecalculating(false)
+    }
+  }, [companyId, fleetRecalculating, supabase])
+
   /* ── Helpers ──────────────────────────────────────────────── */
 
   function kpiZeros(): KPI[] {
@@ -723,7 +797,7 @@ export default function DashboardPage() {
       {/* Tabs */}
       <div className="border-b border-border mb-6">
         <div className="flex gap-1 overflow-x-auto">
-          {tabs.map((tab) => (
+          {tabs.filter(tab => tab.key !== 'fleet' || ['supervisor', 'super_admin'].includes(userRole)).map((tab) => (
             <button
               key={tab.key}
               onClick={() => setActiveTab(tab.key)}
@@ -1219,8 +1293,8 @@ export default function DashboardPage() {
         </div>
       )}
 
-      {/* Tab Content — Remaining Life & Fleet Risk (Coming Soon) */}
-      {(activeTab === 'rl' || activeTab === 'fleet') && (
+      {/* Tab Content — Remaining Life (Coming Soon) */}
+      {activeTab === 'rl' && (
         <div className="flex flex-col items-center justify-center py-20 text-center">
           <div className="rounded-full bg-muted p-4 mb-4">
             {tabs.find(t => t.key === activeTab)?.icon}
@@ -1229,6 +1303,201 @@ export default function DashboardPage() {
             {tabs.find(t => t.key === activeTab)?.label}
           </h2>
           <p className="text-sm text-muted-foreground/60">Coming Soon</p>
+        </div>
+      )}
+
+      {/* Tab Content — Fleet Risk */}
+      {activeTab === 'fleet' && (
+        <div>
+          <div className="flex items-center justify-between mb-4">
+            <div>
+              <h2 className="text-sm font-medium mb-1">Fleet-Wide Risk Heatmap</h2>
+              <p className="text-xs text-muted-foreground">
+                Combines physical condition (RL proximity) and material vulnerability (DM Screener) per area
+              </p>
+            </div>
+            <button
+              onClick={handleFleetRecalculate}
+              disabled={fleetRecalculating}
+              className="inline-flex items-center gap-2 rounded-lg border border-border px-4 py-2 text-sm font-medium hover:bg-accent transition-colors disabled:opacity-50"
+            >
+              <RefreshCw className={cn('h-4 w-4', fleetRecalculating && 'animate-spin')} />
+              {fleetRecalculating ? 'Recalculating...' : 'Recalculate Fleet Risk'}
+            </button>
+          </div>
+
+          {fleetRiskLoading ? (
+            <div className="rounded-xl border border-border">
+              {[1, 2, 3].map(i => (
+                <div key={i} className="h-16 bg-card border-b border-border animate-pulse last:border-b-0" />
+              ))}
+            </div>
+          ) : !fleetRiskData || !fleetRiskData.areas || fleetRiskData.areas.length === 0 ? (
+            <div className="flex flex-col items-center justify-center py-20 text-center">
+              <div className="rounded-full bg-muted p-4 mb-4">
+                <ShieldAlert className="h-6 w-6 text-muted-foreground" />
+              </div>
+              <h3 className="text-base font-medium text-muted-foreground mb-1">
+                No fleet risk data yet
+              </h3>
+              <p className="text-sm text-muted-foreground/60 max-w-sm">
+                Click Recalculate Fleet Risk to compute risk scores across all plant areas.
+              </p>
+            </div>
+          ) : (() => {
+            const areas = fleetRiskData.areas as any[]
+            const allInsufficient = areas.every((a: any) => a.insufficient_data)
+            const criticalCount = areas.filter(a => a.risk_level === 'critical').length
+            const highCount = areas.filter(a => a.risk_level === 'high').length
+            const insufficientCount = areas.filter(a => a.insufficient_data).length
+
+            if (allInsufficient) {
+              return (
+                <div className="flex flex-col items-center justify-center py-20 text-center">
+                  <div className="rounded-full bg-muted p-4 mb-4">
+                    <ShieldAlert className="h-6 w-6 text-muted-foreground" />
+                  </div>
+                  <h3 className="text-base font-medium text-muted-foreground mb-1">
+                    All areas lack sufficient data
+                  </h3>
+                  <p className="text-sm text-muted-foreground/60 max-w-sm">
+                    All areas lack sufficient RL or DM data to compute risk scores.
+                  </p>
+                </div>
+              )
+            }
+
+            const riskBadge = (level: string | null) => {
+              if (!level) return 'bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-400'
+              if (level === 'critical') return 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-300'
+              if (level === 'high') return 'bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-300'
+              if (level === 'medium') return 'bg-yellow-100 text-yellow-700 dark:bg-yellow-900/30 dark:text-yellow-300'
+              return 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-300'
+            }
+
+            const barColor = (level: string | null) => {
+              if (!level || level === 'low') return 'bg-green-500'
+              if (level === 'medium') return 'bg-yellow-500'
+              if (level === 'high') return 'bg-amber-500'
+              return 'bg-red-500'
+            }
+
+            return (
+              <>
+                {/* Summary Cards */}
+                <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-6">
+                  <div className="rounded-xl border border-border bg-card p-4">
+                    <p className="text-xs text-muted-foreground mb-1">Total Areas</p>
+                    <p className="text-2xl font-bold tabular-nums">{areas.length}</p>
+                  </div>
+                  <div className="rounded-xl border border-border bg-card p-4">
+                    <p className="text-xs text-muted-foreground mb-1">Critical</p>
+                    <p className="text-2xl font-bold tabular-nums text-red-600 dark:text-red-400">{criticalCount}</p>
+                  </div>
+                  <div className="rounded-xl border border-border bg-card p-4">
+                    <p className="text-xs text-muted-foreground mb-1">High</p>
+                    <p className="text-2xl font-bold tabular-nums text-amber-600 dark:text-amber-400">{highCount}</p>
+                  </div>
+                  <div className="rounded-xl border border-border bg-card p-4">
+                    <p className="text-xs text-muted-foreground mb-1">Insufficient Data</p>
+                    <p className="text-2xl font-bold tabular-nums text-slate-500">{insufficientCount}</p>
+                  </div>
+                </div>
+
+                {/* Area Table */}
+                <div className="rounded-xl border border-border overflow-hidden">
+                  <table className="w-full text-sm">
+                    <thead>
+                      <tr className="bg-muted/50">
+                        <th className="text-left px-4 py-3 font-medium text-muted-foreground">Area Name</th>
+                        <th className="text-left px-4 py-3 font-medium text-muted-foreground">Risk Level</th>
+                        <th className="text-right px-4 py-3 font-medium text-muted-foreground">Score</th>
+                        <th className="text-left px-4 py-3 font-medium text-muted-foreground">Physical Signal</th>
+                        <th className="text-left px-4 py-3 font-medium text-muted-foreground">DM Signal</th>
+                        <th className="text-right px-4 py-3 font-medium text-muted-foreground">CML w/ RL</th>
+                        <th className="text-right px-4 py-3 font-medium text-muted-foreground">Equip w/ DM</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {areas.map((area: any, idx: number) => (
+                        <tr
+                          key={area.area_id || idx}
+                          className={cn(
+                            'border-t border-border transition-colors',
+                            area.insufficient_data ? 'opacity-50' : 'hover:bg-muted/30'
+                          )}
+                        >
+                          <td className="px-4 py-3 font-medium">{area.area_name}</td>
+                          <td className="px-4 py-3">
+                            <span className={cn(
+                              'inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-medium',
+                              area.insufficient_data
+                                ? 'bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-400'
+                                : riskBadge(area.risk_level)
+                            )}>
+                              {area.insufficient_data ? 'Insufficient Data' : (area.risk_level ? area.risk_level.charAt(0).toUpperCase() + area.risk_level.slice(1) : '—')}
+                            </span>
+                          </td>
+                          <td className="px-4 py-3 text-right tabular-nums">
+                            {area.risk_score != null ? area.risk_score.toFixed(1) : '—'}
+                          </td>
+                          <td className="px-4 py-3">
+                            {area.insufficient_data ? (
+                              <span className="text-muted-foreground">—</span>
+                            ) : (
+                              <div className="flex items-center gap-2">
+                                <div className="w-20 h-2 rounded-full bg-slate-200 dark:bg-slate-700 overflow-hidden">
+                                  <div
+                                    className={cn('h-full rounded-full', barColor(area.risk_level))}
+                                    style={{ width: `${Math.round((area.physical_signal || 0) * 100)}%` }}
+                                  />
+                                </div>
+                                <span className="text-xs tabular-nums w-8 text-right">
+                                  {Math.round((area.physical_signal || 0) * 100)}%
+                                </span>
+                              </div>
+                            )}
+                          </td>
+                          <td className="px-4 py-3">
+                            {area.insufficient_data ? (
+                              <span className="text-muted-foreground">—</span>
+                            ) : (
+                              <div className="flex items-center gap-2">
+                                <div className="w-20 h-2 rounded-full bg-slate-200 dark:bg-slate-700 overflow-hidden">
+                                  <div
+                                    className={cn('h-full rounded-full', barColor(area.risk_level))}
+                                    style={{ width: `${Math.round((area.dm_signal || 0) * 100)}%` }}
+                                  />
+                                </div>
+                                <span className="text-xs tabular-nums w-8 text-right">
+                                  {Math.round((area.dm_signal || 0) * 100)}%
+                                </span>
+                              </div>
+                            )}
+                          </td>
+                          <td className="px-4 py-3 text-right tabular-nums">
+                            {area.cml_count_with_rl ?? '—'}
+                          </td>
+                          <td className="px-4 py-3 text-right tabular-nums">
+                            {area.equipment_count_with_dm ?? '—'}
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                  <div className="px-4 py-2 bg-muted/30 border-t border-border text-xs text-muted-foreground flex items-center justify-between">
+                    <span>{areas.length} area{areas.length !== 1 ? 's' : ''} assessed</span>
+                    {fleetLastComputed && (
+                      <span>Last computed: {new Date(fleetLastComputed).toLocaleString('en-GB', {
+                        day: 'numeric', month: 'short', year: 'numeric',
+                        hour: '2-digit', minute: '2-digit',
+                      })}</span>
+                    )}
+                  </div>
+                </div>
+              </>
+            )
+          })()}
         </div>
       )}
     </div>

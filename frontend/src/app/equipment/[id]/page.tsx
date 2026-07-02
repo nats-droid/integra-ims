@@ -27,6 +27,7 @@ import {
   Factory,
   FileText,
   CheckCircle,
+  XCircle,
   Clock,
   FileX,
   FlaskConical,
@@ -136,6 +137,9 @@ export default function EquipmentDetailPage() {
   const [savingCmlId, setSavingCmlId] = useState<string | null>(null)
   const [rlPredictions, setRlPredictions] = useState<Record<string, RLPrediction>>({})
   const [recalculating, setRecalculating] = useState(false)
+  const [dmValidation, setDmValidation] = useState<any | null>(null)
+  const [dmValidationLoading, setDmValidationLoading] = useState(false)
+  const [dmKnowledgeBase, setDmKnowledgeBase] = useState<any[]>([])
 
   const canEditTRequired = userRole === 'engineer' || userRole === 'supervisor' || userRole === 'super_admin'
 
@@ -410,6 +414,34 @@ export default function EquipmentDetailPage() {
     }
   }, [sb, id])
 
+  // Fetch validation data for Damage Mechanisms tab
+  const fetchDmValidation = useCallback(async (eqId: string) => {
+    setDmValidationLoading(true)
+    try {
+      const { data: { session } } = await supabase.auth.getSession()
+      const token = session?.access_token
+      if (!token) return
+      const backendUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000'
+      const res = await fetch(`${backendUrl}/api/v1/analytics/dm-validation/${eqId}/latest`, {
+        headers: { Authorization: `Bearer ${token}` },
+      })
+      if (!res.ok) throw new Error('Failed to fetch validation')
+      const data = await res.json()
+      setDmValidation(data)
+    } catch {
+      setDmValidation(null)
+    } finally {
+      setDmValidationLoading(false)
+    }
+  }, [supabase])
+
+  // Load DM knowledge base for name lookups
+  useEffect(() => {
+    sb.from('dm_knowledge_base').select('dm_code, dm_name').then(({ data }: any) => {
+      if (data) setDmKnowledgeBase(data)
+    })
+  }, [sb])
+
   useEffect(() => {
     fetchData()
   }, [fetchData])
@@ -418,8 +450,9 @@ export default function EquipmentDetailPage() {
   useEffect(() => {
     if (data?.equipment) {
       fetchDmResults(data.equipment)
+      fetchDmValidation(data.equipment.id)
     }
-  }, [data, fetchDmResults])
+  }, [data, fetchDmResults, fetchDmValidation])
 
   if (loading) {
     return (
@@ -1097,6 +1130,113 @@ export default function EquipmentDetailPage() {
               </div>
             </div>
           </div>
+        )}
+
+        {/* ── Field Validation History ── */}
+        {canEditTRequired && (
+          <>
+            {/* Divider */}
+            <div className="border-t border-border pt-6 mt-2">
+              <h3 className="text-sm font-medium flex items-center gap-2 mb-4">
+                <CheckCircle className="h-4 w-4 text-primary" />
+                Field Validation History
+              </h3>
+
+              {dmValidationLoading ? (
+                <div className="animate-pulse space-y-3">
+                  <div className="h-10 bg-muted rounded-lg" />
+                  <div className="h-20 bg-muted rounded-lg" />
+                </div>
+              ) : !dmValidation ? (
+                /* State 1 — no data */
+                <div className="rounded-lg border border-dashed border-border p-6 text-center text-muted-foreground">
+                  <CheckCircle className="h-6 w-6 mx-auto mb-2 opacity-40" />
+                  <p className="text-sm">No validation data available.</p>
+                  <p className="text-xs mt-1">
+                    Run &apos;Validate All&apos; from the DM Screener page to compute field validation scores.
+                  </p>
+                </div>
+              ) : (dmValidation.predicted_dm_codes || []).length === 0 ? (
+                /* State 2 — no Active DMs */
+                <div className="rounded-lg border border-dashed border-border p-6 text-center text-muted-foreground">
+                  <Info className="h-6 w-6 mx-auto mb-2 opacity-40" />
+                  <p className="text-sm">No Active DMs predicted for this equipment — field validation not applicable.</p>
+                </div>
+              ) : (
+                /* State 3 — has validation data */
+                <>
+                  {/* Summary bar */}
+                  <div className="flex items-center justify-between bg-card border border-border rounded-lg p-4 mb-4">
+                    <div className="flex items-center gap-3">
+                      {(() => {
+                        const score = dmValidation.match_score * 100
+                        let badgeColor = 'bg-red-100 text-red-800 dark:bg-red-900/30 dark:text-red-400'
+                        if (score >= 70) badgeColor = 'bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-400'
+                        else if (score >= 40) badgeColor = 'bg-amber-100 text-amber-800 dark:bg-amber-900/30 dark:text-amber-400'
+                        return (
+                          <span className={`text-sm font-bold px-2.5 py-1 rounded-full ${badgeColor}`}>
+                            {score.toFixed(0)}% Field Match
+                          </span>
+                        )
+                      })()}
+                      <span className="text-xs text-muted-foreground">
+                        Last validated: {new Date(dmValidation.computed_at).toLocaleDateString('en-GB', {
+                          day: 'numeric', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit'
+                        })}
+                      </span>
+                    </div>
+                    <span className="text-xs text-muted-foreground">
+                      {(dmValidation.actual_finding_dm_codes || []).length} of {(dmValidation.predicted_dm_codes || []).length} Active DMs found in inspection notes
+                    </span>
+                  </div>
+
+                  {/* Breakdown table */}
+                  <div className="rounded-lg border border-border overflow-hidden">
+                    <table className="w-full text-sm">
+                      <thead>
+                        <tr className="border-b border-border bg-muted/50">
+                          <th className="px-4 py-2.5 text-left font-medium text-muted-foreground text-xs uppercase tracking-wider w-10">Status</th>
+                          <th className="px-4 py-2.5 text-left font-medium text-muted-foreground text-xs uppercase tracking-wider">DM Code</th>
+                          <th className="px-4 py-2.5 text-left font-medium text-muted-foreground text-xs uppercase tracking-wider">Name</th>
+                          <th className="px-4 py-2.5 text-left font-medium text-muted-foreground text-xs uppercase tracking-wider">Keyword Searched</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {dmValidation.predicted_dm_codes.map((dmCode: string, idx: number) => {
+                          const found = (dmValidation.actual_finding_dm_codes || []).includes(dmCode)
+                          const kbEntry = dmKnowledgeBase.find((k: any) => k.dm_code === dmCode)
+                          const dmName = kbEntry?.dm_name || dmCode
+                          // Extract keyword via same logic as backend
+                          const parenMatch = dmName.match(/\(([^)]+)\)/)
+                          const keyword = parenMatch && parenMatch[1].length <= 15 && !['Including','Excluding','Also'].some(w => parenMatch[1].startsWith(w))
+                            ? parenMatch[1]
+                            : (dmName.split(/[\s,-]+/).filter((w: string) => w.length > 1 && !['Corrosion','High','Low','Temperature','Stress','Damage','Attack','Cracking','Induced','And','Of','The','In','At','With','For','Under','Including','Assisted','Related','Enhanced'].includes(w))[0] || dmName.slice(0, 20))
+                          return (
+                            <tr key={dmCode} className="border-b border-border last:border-0">
+                              <td className="px-4 py-2.5">
+                                {found ? (
+                                  <span className="inline-flex items-center gap-1 text-green-600 dark:text-green-400 text-xs">
+                                    <CheckCircle className="h-3.5 w-3.5" /> Found in field notes
+                                  </span>
+                                ) : (
+                                  <span className="inline-flex items-center gap-1 text-slate-400 dark:text-slate-500 text-xs">
+                                    <XCircle className="h-3.5 w-3.5" /> Not yet observed
+                                  </span>
+                                )}
+                              </td>
+                              <td className="px-4 py-2.5 font-mono text-xs text-muted-foreground">{dmCode}</td>
+                              <td className="px-4 py-2.5 text-sm">{dmName}</td>
+                              <td className="px-4 py-2.5 text-xs text-muted-foreground font-mono">{keyword}</td>
+                            </tr>
+                          )
+                        })}
+                      </tbody>
+                    </table>
+                  </div>
+                </>
+              )}
+            </div>
+          </>
         )}
       </div>
     )

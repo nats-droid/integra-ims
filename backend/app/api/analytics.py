@@ -5,7 +5,6 @@ from app.services import (
     remaining_life,
     anomaly_detection,
     fleet_risk,
-    dm_validation,
     data_quality,
 )
 
@@ -100,17 +99,44 @@ async def compute_fleet_risk(
     return result
 
 
-@router.post("/analytics/dm-validate/{equipment_id}")
-async def validate_dm_screener(
+@router.post("/analytics/dm-validation/{company_id}")
+async def compute_dm_validation(
+    company_id: str,
+    user: dict = Depends(verify_jwt),
+):
+    """
+    Validate DM Screener accuracy against field findings
+    for all equipment in a company.
+    Compares predicted Active DM codes with keywords in
+    checklist_answers inspection notes.
+    """
+    from app.services import dm_accuracy
+
+    result = await dm_accuracy.compute(company_id)
+    return result
+
+
+@router.get("/analytics/dm-validation/{equipment_id}/latest")
+async def get_latest_dm_validation(
     equipment_id: str,
     user: dict = Depends(verify_jwt),
 ):
     """
-    Validate DM Screener accuracy vs actual findings.
-    Compares predicted DM codes with keywords in checklist_answers/maintenance_log.
+    Get latest DM accuracy validation result for an equipment.
+    Returns single row (latest by computed_at) or null.
     """
-    result = await dm_validation.validate(equipment_id, user["company_id"])
-    return result
+    from app.core.database import get_db
+
+    db = get_db()
+    result = (
+        db.table("dm_validation_results")
+        .select("*")
+        .eq("equipment_id", equipment_id)
+        .order("computed_at", desc=True)
+        .limit(1)
+        .execute()
+    )
+    return result.data[0] if result.data else None
 
 
 @router.post("/analytics/data-quality/{company_id}")
