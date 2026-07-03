@@ -219,6 +219,21 @@ export default function DashboardPage() {
         .eq('auth_user_id', user.id)
         .maybeSingle() as unknown as { data: { id: string; company_id: string; full_name: string; role: string } | null }
 
+      const isSuperAdmin = appUser?.role === 'super_admin'
+
+      // Super Admin: fetch first company as effective company
+      if (!appUser?.company_id && isSuperAdmin) {
+        const { data: firstCompany } = await (supabase as any)
+          .from('companies')
+          .select('id')
+          .order('created_at', { ascending: true })
+          .limit(1)
+          .single()
+        if (firstCompany?.id) {
+          appUser.company_id = firstCompany.id
+        }
+      }
+
       if (!appUser?.company_id) { setLoading(false); return }
 
       setUserName(appUser.full_name || 'User')

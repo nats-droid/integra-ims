@@ -84,7 +84,7 @@ export default function LoginPage() {
             disabled={loading}
             className="w-full py-2 px-4 bg-primary text-primary-foreground rounded-lg text-sm font-medium hover:opacity-90 disabled:opacity-50 transition-opacity"
           >
-            {loading ? 'Memproses...' : 'Masuk'}
+            {loading ? 'Processing...' : 'Sign In'}
           </button>
         </form>
       </div>

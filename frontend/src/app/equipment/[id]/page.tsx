@@ -36,6 +36,7 @@ import {
   Info,
   RefreshCw,
   TrendingDown,
+  Plus,
 } from 'lucide-react'
 
 type Equipment = Database['public']['Tables']['equipment']['Row']
@@ -818,6 +819,21 @@ export default function EquipmentDetailPage() {
 
   const renderInspectionsTab = () => (
     <div className="space-y-4">
+      {/* Header row with title and New Inspection button */}
+      <div className="flex items-center justify-between">
+        <h3 className="text-sm font-medium text-muted-foreground">
+          {inspections.length} inspection{inspections.length !== 1 ? 's' : ''} recorded
+        </h3>
+        {userRole === 'inspector' && (
+          <button
+            onClick={() => router.push(`/inspections/new?equipment_id=${id}`)}
+            className="inline-flex items-center gap-2 rounded-lg bg-primary px-4 py-2 text-sm font-medium text-primary-foreground hover:bg-primary/90 transition-colors"
+          >
+            <Plus className="h-4 w-4" />
+            New Inspection
+          </button>
+        )}
+      </div>
       {inspections.length === 0 ? (
         <div className="rounded-xl border border-border/70 p-8 text-center text-muted-foreground">
           <ClipboardList className="h-8 w-8 mx-auto mb-2" />

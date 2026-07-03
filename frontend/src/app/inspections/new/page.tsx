@@ -1,7 +1,7 @@
 'use client'
 
-import { useEffect, useState, useCallback, useRef } from 'react'
-import { useRouter } from 'next/navigation'
+import { useEffect, useState, useCallback, useRef, Suspense } from 'react'
+import { useRouter, useSearchParams } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
 import type { Database } from '@/types/database'
 import AppLayout from '@/components/layout/app-layout'
@@ -90,7 +90,16 @@ function todayString(): string {
 // ---------------------------------------------------------------------------
 
 export default function InspectionsNewPage() {
+  return (
+    <Suspense fallback={<div className="px-6 sm:px-8 py-8"><div className="animate-pulse h-8 w-48 bg-muted/20 rounded" /></div>}>
+      <InspectionsNewPageInner />
+    </Suspense>
+  )
+}
+
+function InspectionsNewPageInner() {
   const router = useRouter()
+  const searchParams = useSearchParams()
   const supabase = createClient()
   const sb = supabase as any
 
@@ -106,6 +115,12 @@ export default function InspectionsNewPage() {
   const [showResults, setShowResults] = useState(false)
   const searchRef = useRef<HTMLDivElement>(null)
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+
+  // --- Filter state ---
+  const [areaFilter, setAreaFilter] = useState('')
+  const [typeFilter, setTypeFilter] = useState('')
+  const [areas, setAreas] = useState<PlantAreaRow[]>([])
+  const [autoLoaded, setAutoLoaded] = useState(false)
 
   // --- Step 2: Metadata ---
   const [inspectionType, setInspectionType] = useState('external')
@@ -183,6 +198,63 @@ export default function InspectionsNewPage() {
   }, [])
 
   // =========================================================================
+  // Load plant areas for filter dropdown
+  // =========================================================================
+
+  useEffect(() => {
+    async function loadAreas() {
+      try {
+        const { data: companyData } = await sb
+          .from('app_users')
+          .select('company_id')
+          .eq('auth_user_id', (await supabase.auth.getUser()).data.user?.id)
+          .single()
+        const companyId = (companyData as { company_id: string } | null)?.company_id
+        if (!companyId) return
+        const { data } = await sb
+          .from('plant_areas')
+          .select('*')
+          .eq('company_id', companyId)
+          .order('name')
+        if (data) setAreas(data as PlantAreaRow[])
+      } catch (err) {
+        console.error('Load areas error:', err)
+      }
+    }
+    loadAreas()
+  }, [sb, supabase])
+
+  // =========================================================================
+  // Auto-select equipment from query param ?equipment_id=
+  // =========================================================================
+
+  useEffect(() => {
+    const equipId = searchParams.get('equipment_id')
+    if (!equipId || autoLoaded) return
+    setAutoLoaded(true)
+
+    async function loadAndSelect() {
+      try {
+        const { data } = await sb
+          .from('equipment')
+          .select('*, plant_areas(name)')
+          .eq('id', equipId)
+          .single()
+        if (data) {
+          const eq = {
+            ...data,
+            area_name: data.plant_areas?.name ?? null,
+          } as EquipmentRow & { area_name?: string | null }
+          setSelectedEquipment(eq)
+        }
+      } catch (err) {
+        console.error('Auto-select equipment error:', err)
+      }
+    }
+    loadAndSelect()
+  }, [searchParams, sb, autoLoaded])
+
+  // =========================================================================
   // Debounced equipment search
   // =========================================================================
 
@@ -208,11 +280,21 @@ export default function InspectionsNewPage() {
           return
         }
 
-        const { data } = await sb
+        // Build query with optional filters
+        let query = sb
           .from('equipment')
           .select('*, plant_areas!inner(name)')
           .eq('company_id', companyId)
           .ilike('tag', `%${q}%`)
+
+        if (areaFilter) {
+          query = query.eq('area_id', areaFilter)
+        }
+        if (typeFilter) {
+          query = query.eq('type', typeFilter)
+        }
+
+        const { data } = await query
           .limit(10)
           .order('tag')
 
@@ -231,7 +313,7 @@ export default function InspectionsNewPage() {
         setSearching(false)
       }
     },
-    [sb, supabase],
+    [sb, supabase, areaFilter, typeFilter],
   )
 
   const handleSearchChange = (value: string) => {
@@ -746,7 +828,36 @@ export default function InspectionsNewPage() {
             </h2>
 
             {!selectedEquipment ? (
-              <div ref={searchRef} className="relative">
+              <div ref={searchRef} className="relative space-y-3">
+                {/* Filter dropdowns */}
+                <div className="flex gap-3">
+                  <select
+                    value={areaFilter}
+                    onChange={(e) => { setAreaFilter(e.target.value); setShowResults(false); }}
+                    className="flex-1 rounded-xl border border-border/70 bg-background px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-primary/30 appearance-none"
+                  >
+                    <option value="">All Areas</option>
+                    {areas.map((area) => (
+                      <option key={area.id} value={area.id}>{area.name}</option>
+                    ))}
+                  </select>
+                  <select
+                    value={typeFilter}
+                    onChange={(e) => { setTypeFilter(e.target.value); setShowResults(false); }}
+                    className="flex-1 rounded-xl border border-border/70 bg-background px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-primary/30 appearance-none"
+                  >
+                    <option value="">All Types</option>
+                    <option value="piping">Piping</option>
+                    <option value="vessel">Vessel</option>
+                    <option value="tank">Tank</option>
+                    <option value="heater">Heater</option>
+                    <option value="pump">Pump</option>
+                    <option value="compressor">Compressor</option>
+                    <option value="valve">Valve</option>
+                    <option value="other">Other</option>
+                  </select>
+                </div>
+                {/* Search box */}
                 <div className="relative">
                   <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
                   <input

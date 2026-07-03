@@ -142,7 +142,7 @@ export default function CircuitsPage() {
     <div className="px-6 sm:px-8 py-8">
       <div className="mb-6">
         <h1 className="text-2xl sm:text-3xl font-semibold tracking-tight">Circuits</h1>
-        <p className="text-sm text-muted-foreground">Sirkuit korosi — grup CML dalam satu equipment</p>
+        <p className="text-sm text-muted-foreground">Corrosion circuits — CML groups within a single equipment</p>
       </div>
 
       {/* Search */}
