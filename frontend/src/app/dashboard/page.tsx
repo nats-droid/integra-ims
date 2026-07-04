@@ -72,6 +72,18 @@ interface FilterState {
   riskCategory: string
 }
 
+/* ── RL prediction types ────────────────────────────────────── */
+
+interface RLEquipmentRow {
+  equipment_id?: string
+  tag: string
+  type: string
+  area_name: string | null
+  governing_cml: string | null
+  governing_rl_years: number | null
+  computed_at: string | null
+}
+
 /* ── Tab definitions ───────────────────────────────────────── */
 
 const tabs: { key: TabKey; label: string; icon: React.ReactNode }[] = [
@@ -148,6 +160,12 @@ export default function DashboardPage() {
   const [fleetRiskLoading, setFleetRiskLoading] = useState(false)
   const [fleetRecalculating, setFleetRecalculating] = useState(false)
   const [fleetLastComputed, setFleetLastComputed] = useState<string | null>(null)
+
+  // Remaining Life state
+  const [rlData, setRlData] = useState<RLEquipmentRow[]>([])
+  const [rlNoData, setRlNoData] = useState<RLEquipmentRow[]>([])
+  const [rlLoading, setRlLoading] = useState(false)
+  const [rlLastComputed, setRlLastComputed] = useState<string | null>(null)
 
   // Filter state
   const [filters, setFilters] = useState<FilterState>({
@@ -653,6 +671,112 @@ export default function DashboardPage() {
     load()
   }, [activeTab, companyId, supabase])
 
+  /* ── Load Remaining Life data ────────────────────────────── */
+
+  useEffect(() => {
+    if (activeTab !== 'rl' || !companyId) return
+    async function load() {
+      setRlLoading(true)
+      try {
+        // 1. Fetch all RL predictions (latest per CML)
+        const { data: rlRows } = await (supabase as any)
+          .from('rl_predictions')
+          .select('id, cml_point_id, confidence_low, confidence_high, predicted_rl_years, computed_at')
+          .eq('company_id', companyId)
+          .order('computed_at', { ascending: false })
+
+        // 2. Fetch all equipment + plant areas
+        const { data: allEquips } = await (supabase as any)
+          .from('equipment')
+          .select('id, tag, type, area_id, plant_areas(name)')
+          .eq('company_id', companyId)
+
+        // 3. Fetch CML points
+        const cmlIds = [...new Set((rlRows || []).map((r: any) => r.cml_point_id).filter(Boolean))]
+        const { data: cmls } = cmlIds.length > 0
+          ? await (supabase as any).from('cml_points').select('id, location_label, equipment_id').in('id', cmlIds)
+          : { data: [] }
+
+        const cmlMap: Record<string, any> = {}
+        for (const c of cmls || []) {
+          cmlMap[c.id] = c
+        }
+
+        // 4. Deduplicate RL rows per CML (latest computed_at)
+        const seenCml = new Set<string>()
+        const rlByEquip: Record<string, { confidence_low: number; location_label: string; computed_at: string }> = {}
+        let latestComputed: string | null = null
+
+        for (const r of rlRows || []) {
+          if (!r.cml_point_id || seenCml.has(r.cml_point_id)) continue
+          seenCml.add(r.cml_point_id)
+
+          const cml = cmlMap[r.cml_point_id]
+          const eqId = cml?.equipment_id
+          if (!eqId) continue
+
+          // Track latest computed_at overall
+          if (r.computed_at && (!latestComputed || r.computed_at > latestComputed)) {
+            latestComputed = r.computed_at
+          }
+
+          // Track min confidence_low per equipment (governing RL)
+          const rlVal = r.confidence_low ?? r.predicted_rl_years
+          if (rlVal === null && rlVal === undefined) continue
+
+          if (!rlByEquip[eqId] || rlVal < rlByEquip[eqId].confidence_low) {
+            rlByEquip[eqId] = {
+              confidence_low: rlVal,
+              location_label: cml.location_label || '—',
+              computed_at: r.computed_at,
+            }
+          }
+        }
+
+        setRlLastComputed(latestComputed)
+
+        // 5. Build table rows
+        const withData: RLEquipmentRow[] = []
+        const withoutData: RLEquipmentRow[] = []
+
+        for (const eq of allEquips || []) {
+          const rl = rlByEquip[eq.id]
+          const row: RLEquipmentRow = {
+            equipment_id: eq.id,
+            tag: eq.tag || eq.id.slice(0, 8),
+            type: eq.type || '',
+            area_name: eq.plant_areas?.name || null,
+            governing_cml: rl?.location_label ?? null,
+            governing_rl_years: rl?.confidence_low ?? null,
+            computed_at: rl?.computed_at ?? null,
+          }
+          if (rl) {
+            withData.push(row)
+          } else {
+            withoutData.push(row)
+          }
+        }
+
+        // Sort by governing_rl_years ascending (nulls last)
+        withData.sort((a, b) => {
+          if (a.governing_rl_years === null) return 1
+          if (b.governing_rl_years === null) return -1
+          return a.governing_rl_years - b.governing_rl_years
+        })
+
+        setRlData(withData)
+        setRlNoData(withoutData)
+      } catch (err) {
+        console.error('RL load error:', err)
+        setRlData([])
+        setRlNoData([])
+      } finally {
+        setRlLoading(false)
+      }
+    }
+    load()
+  }, [activeTab, companyId, supabase])
+
   /* ── Recalculate anomalies ─────────────────────────────── */
 
   const handleRecalculate = useCallback(async () => {
@@ -812,7 +936,7 @@ export default function DashboardPage() {
       {/* Tabs */}
       <div className="border-b border-border mb-6">
         <div className="flex gap-1 overflow-x-auto">
-          {tabs.filter(tab => tab.key !== 'fleet' || ['supervisor', 'super_admin'].includes(userRole)).map((tab) => (
+          {tabs.filter(tab => tab.key !== 'fleet' || ['supervisor', 'super_admin'].includes(userRole)).filter(tab => tab.key !== 'rl' || ['supervisor', 'super_admin'].includes(userRole)).map((tab) => (
             <button
               key={tab.key}
               onClick={() => setActiveTab(tab.key)}
@@ -1308,16 +1432,181 @@ export default function DashboardPage() {
         </div>
       )}
 
-      {/* Tab Content — Remaining Life (Coming Soon) */}
+      {/* Tab Content — Remaining Life */}
       {activeTab === 'rl' && (
-        <div className="flex flex-col items-center justify-center py-20 text-center">
-          <div className="rounded-full bg-muted p-4 mb-4">
-            {tabs.find(t => t.key === activeTab)?.icon}
+        <div className="space-y-6">
+          {/* Header */}
+          <div className="flex items-start justify-between gap-4">
+            <div>
+              <h2 className="text-lg font-semibold">Remaining Life Overview</h2>
+              <p className="text-sm text-muted-foreground mt-0.5">
+                Governing RL per equipment based on most critical CML (confidence_low threshold)
+              </p>
+            </div>
+            {rlLastComputed && (
+              <div className="shrink-0 text-right">
+                <p className="text-xs text-muted-foreground">
+                  Last computed: {new Date(rlLastComputed).toLocaleDateString('en-GB', {
+                    day: 'numeric', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit',
+                  })}
+                </p>
+              </div>
+            )}
+            {!rlLastComputed && !rlLoading && (
+              <div className="shrink-0 text-right">
+                <p className="text-xs text-muted-foreground">Not yet computed</p>
+              </div>
+            )}
           </div>
-          <h2 className="text-lg font-semibold text-muted-foreground mb-1">
-            {tabs.find(t => t.key === activeTab)?.label}
-          </h2>
-          <p className="text-sm text-muted-foreground/60">Coming Soon</p>
+
+          {rlLoading ? (
+            <div className="rounded-xl border border-border">
+              {[1, 2, 3, 4].map(i => (
+                <div key={i} className="h-14 bg-card border-b border-border animate-pulse last:border-b-0" />
+              ))}
+            </div>
+          ) : rlData.length === 0 && rlNoData.length === 0 ? (
+            <div className="flex flex-col items-center justify-center py-20 text-center">
+              <div className="rounded-full bg-muted p-4 mb-4">
+                <TrendingDown className="h-6 w-6 text-muted-foreground" />
+              </div>
+              <h3 className="text-base font-medium text-muted-foreground mb-1">
+                No equipment data found
+              </h3>
+              <p className="text-sm text-muted-foreground/60 max-w-sm">
+                Run Remaining Life calculation from an equipment detail page to populate RL predictions.
+              </p>
+            </div>
+          ) : (
+            <>
+              {/* ── Summary Cards ── */}
+              <div className="grid grid-cols-4 gap-4">
+                {([
+                  { label: 'Total Equipment', value: rlData.length + rlNoData.length, color: 'text-foreground', bg: 'bg-card', icon: <LayoutDashboard className="h-5 w-5" /> },
+                  { label: 'Critical (< 2 yr)', value: rlData.filter(r => r.governing_rl_years !== null && r.governing_rl_years < 2).length, color: 'text-red-600', bg: 'bg-red-50 dark:bg-red-950/20', icon: <AlertTriangle className="h-5 w-5" /> },
+                  { label: 'Monitor (2-5 yr)', value: rlData.filter(r => r.governing_rl_years !== null && r.governing_rl_years >= 2 && r.governing_rl_years <= 5).length, color: 'text-amber-600', bg: 'bg-amber-50 dark:bg-amber-950/20', icon: <Clock className="h-5 w-5" /> },
+                  { label: 'Adequate (> 5 yr)', value: rlData.filter(r => r.governing_rl_years !== null && r.governing_rl_years > 5).length, color: 'text-green-600', bg: 'bg-green-50 dark:bg-green-950/20', icon: <CheckCircle2 className="h-5 w-5" /> },
+                ] as const).map((card, i) => (
+                  <div key={i} className={`${card.bg} border border-border/70 rounded-xl p-4 flex items-center gap-3`}>
+                    <div className={card.color}>{card.icon}</div>
+                    <div>
+                      <p className="text-2xl font-bold tabular-nums">{card.value}</p>
+                      <p className="text-xs text-muted-foreground">{card.label}</p>
+                    </div>
+                  </div>
+                ))}
+              </div>
+
+              {/* ── Main Table ── */}
+              {rlData.length > 0 && (
+                <div className="rounded-xl border border-border overflow-hidden">
+                  <table className="w-full text-sm">
+                    <thead>
+                      <tr className="border-b border-border bg-muted/30">
+                        <th className="px-4 py-3 text-left font-medium text-muted-foreground text-xs uppercase tracking-wider">Equipment Tag</th>
+                        <th className="px-4 py-3 text-left font-medium text-muted-foreground text-xs uppercase tracking-wider">Area</th>
+                        <th className="px-4 py-3 text-left font-medium text-muted-foreground text-xs uppercase tracking-wider">Governing CML</th>
+                        <th className="px-4 py-3 text-left font-medium text-muted-foreground text-xs uppercase tracking-wider">Remaining Life</th>
+                        <th className="px-4 py-3 text-left font-medium text-muted-foreground text-xs uppercase tracking-wider">Risk</th>
+                        <th className="px-4 py-3 text-left font-medium text-muted-foreground text-xs uppercase tracking-wider">Last Computed</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {rlData.map((row) => {
+                        const rl = row.governing_rl_years
+                        const riskLevel = rl !== null && rl < 2 ? 'critical' : rl !== null && rl <= 5 ? 'monitor' : 'adequate'
+                        const barColor = riskLevel === 'critical' ? '#ef4444' : riskLevel === 'monitor' ? '#f59e0b' : '#22c55e'
+                        const barWidth = rl !== null ? Math.min(Math.max((rl / 20) * 100, 5), 100) : 0
+                        return (
+                          <tr key={row.equipment_id || row.tag} className="border-b border-border last:border-0 hover:bg-muted/20 transition-colors">
+                            <td className="px-4 py-3">
+                              <Link href={`/equipment/${row.equipment_id}`} className="font-medium text-primary hover:underline">
+                                {row.tag}
+                              </Link>
+                            </td>
+                            <td className="px-4 py-3 text-muted-foreground">{row.area_name || '—'}</td>
+                            <td className="px-4 py-3 text-muted-foreground">{row.governing_cml || '—'}</td>
+                            <td className="px-4 py-3">
+                              <div className="flex items-center gap-2">
+                                <span className="tabular-nums font-medium min-w-[3.5rem]">
+                                  {rl !== null ? `${rl.toFixed(1)} yr` : '—'}
+                                </span>
+                                <div className="flex-1 max-w-[100px] h-2 bg-slate-200 dark:bg-slate-700 rounded-full overflow-hidden">
+                                  <div
+                                    className="h-full rounded-full transition-all"
+                                    style={{ width: `${barWidth}%`, backgroundColor: barColor }}
+                                  />
+                                </div>
+                              </div>
+                            </td>
+                            <td className="px-4 py-3">
+                              {rl !== null ? (
+                                <span className={`inline-block rounded-full px-2.5 py-0.5 text-xs font-medium ${
+                                  riskLevel === 'critical' ? 'bg-red-100 text-red-700 dark:bg-red-950/40 dark:text-red-400' :
+                                  riskLevel === 'monitor' ? 'bg-amber-100 text-amber-700 dark:bg-amber-950/40 dark:text-amber-400' :
+                                  'bg-green-100 text-green-700 dark:bg-green-950/40 dark:text-green-400'
+                                }`}>
+                                  {riskLevel === 'critical' ? 'Critical' : riskLevel === 'monitor' ? 'Monitor' : 'Adequate'}
+                                </span>
+                              ) : (
+                                <span className="text-xs text-muted-foreground">—</span>
+                              )}
+                            </td>
+                            <td className="px-4 py-3 text-xs text-muted-foreground">
+                              {row.computed_at ? new Date(row.computed_at).toLocaleDateString('en-GB', {
+                                day: 'numeric', month: 'short', year: 'numeric',
+                              }) : '—'}
+                            </td>
+                          </tr>
+                        )
+                      })}
+                    </tbody>
+                  </table>
+                  <div className="px-4 py-2 bg-muted/30 border-t border-border text-xs text-muted-foreground">
+                    {rlData.length} equipment{rlData.length !== 1 ? 's' : ''} with RL data — sorted by remaining life ascending
+                  </div>
+                </div>
+              )}
+
+              {/* ── No RL Data Section ── */}
+              {rlNoData.length > 0 && (
+                <div className="space-y-3">
+                  <h3 className="text-sm font-medium text-muted-foreground">Equipment Without RL Data</h3>
+                  <div className="rounded-xl border border-border overflow-hidden">
+                    <table className="w-full text-sm">
+                      <thead>
+                        <tr className="border-b border-border bg-muted/30">
+                          <th className="px-4 py-3 text-left font-medium text-muted-foreground text-xs uppercase tracking-wider">Tag</th>
+                          <th className="px-4 py-3 text-left font-medium text-muted-foreground text-xs uppercase tracking-wider">Area</th>
+                          <th className="px-4 py-3 text-left font-medium text-muted-foreground text-xs uppercase tracking-wider">Reason</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {rlNoData.map((row) => (
+                          <tr key={row.equipment_id || row.tag} className="border-b border-border last:border-0 hover:bg-muted/20 transition-colors">
+                            <td className="px-4 py-3">
+                              <Link href={`/equipment/${row.equipment_id}`} className="font-medium text-muted-foreground hover:text-primary hover:underline">
+                                {row.tag}
+                              </Link>
+                            </td>
+                            <td className="px-4 py-3 text-muted-foreground">{row.area_name || '—'}</td>
+                            <td className="px-4 py-3">
+                              <span className="inline-flex items-center gap-1.5 rounded-full bg-muted px-2.5 py-0.5 text-xs text-muted-foreground">
+                                No RL data
+                              </span>
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                    <div className="px-4 py-2 bg-muted/30 border-t border-border text-xs text-muted-foreground">
+                      {rlNoData.length} equipment{rlNoData.length !== 1 ? 's' : ''} without RL predictions — run calculation per equipment
+                    </div>
+                  </div>
+                </div>
+              )}
+            </>
+          )}
         </div>
       )}
 
