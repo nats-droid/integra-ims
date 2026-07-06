@@ -150,6 +150,10 @@ export default function DashboardPage() {
   const [workload, setWorkload] = useState<WorkloadInspector[]>([])
   const [workloadLoading, setWorkloadLoading] = useState(false)
 
+  // Inspector Quality state
+  const [inspectorQuality, setInspectorQuality] = useState<any[]>([])
+  const [qualityLoading, setQualityLoading] = useState(false)
+
   // Anomaly state
   const [anomalies, setAnomalies] = useState<any[]>([])
   const [anomaliesLoading, setAnomaliesLoading] = useState(false)
@@ -579,6 +583,42 @@ export default function DashboardPage() {
     }
     load()
   }, [activeTab, companyId, supabase])
+
+  /* ── Load Inspector Quality (supervisor only) ────────────── */
+
+  useEffect(() => {
+    if (activeTab !== 'workload' || !companyId) return
+    if (userRole !== 'supervisor' && userRole !== 'super_admin') return
+    async function loadQuality() {
+      setQualityLoading(true)
+      try {
+        const { data: { session } } = await supabase.auth.getSession()
+        if (!session?.access_token) {
+          setQualityLoading(false)
+          return
+        }
+
+        const backendUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000'
+        const res = await fetch(`${backendUrl}/api/v1/analytics/inspector-quality/${companyId}`, {
+          headers: { 'Authorization': `Bearer ${session.access_token}` },
+        })
+
+        if (!res.ok) {
+          setInspectorQuality([])
+          setQualityLoading(false)
+          return
+        }
+
+        const data = await res.json()
+        setInspectorQuality(data.inspectors || [])
+      } catch (err) {
+        console.error('Inspector quality load error:', err)
+      } finally {
+        setQualityLoading(false)
+      }
+    }
+    loadQuality()
+  }, [activeTab, companyId, supabase, userRole])
 
   /* ── Load Anomalies ────────────────────────────────────── */
 
@@ -1339,6 +1379,83 @@ export default function DashboardPage() {
                   )}
                 </div>
               ))}
+            </div>
+          )}
+
+          {/* Data Quality Scores — supervisor/super_admin only */}
+          {(userRole === 'supervisor' || userRole === 'super_admin') && (
+            <div className="mt-8">
+              <div className="mb-4">
+                <h2 className="text-sm font-medium mb-1">Data Quality Scores</h2>
+                <p className="text-xs text-muted-foreground">
+                  Based on anomaly detection per inspector (Supervisor view only)
+                </p>
+              </div>
+
+              {qualityLoading ? (
+                <div className="rounded-xl border border-border">
+                  {[1, 2, 3].map(i => (
+                    <div key={i} className="h-14 bg-card border-b border-border animate-pulse last:border-b-0" />
+                  ))}
+                </div>
+              ) : inspectorQuality.length === 0 ? (
+                <div className="flex flex-col items-center justify-center py-12 text-center">
+                  <div className="rounded-full bg-muted p-4 mb-4">
+                    <CheckCircle2 className="h-6 w-6 text-muted-foreground" />
+                  </div>
+                  <h3 className="text-base font-medium text-muted-foreground mb-1">
+                    No quality data
+                  </h3>
+                  <p className="text-sm text-muted-foreground/60">
+                    No inspector quality metrics available yet
+                  </p>
+                </div>
+              ) : (
+                <div className="rounded-xl border border-border overflow-hidden">
+                  <table className="w-full text-sm">
+                    <thead>
+                      <tr className="bg-muted/50">
+                        <th className="text-left px-4 py-3 font-medium text-muted-foreground">Inspector</th>
+                        <th className="text-right px-4 py-3 font-medium text-muted-foreground">Total Readings</th>
+                        <th className="text-right px-4 py-3 font-medium text-muted-foreground">Anomalies Flagged</th>
+                        <th className="text-right px-4 py-3 font-medium text-muted-foreground">Quality Score</th>
+                        <th className="text-center px-4 py-3 font-medium text-muted-foreground">Status</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {inspectorQuality.map((iq: any) => (
+                        <tr key={iq.inspector_id} className="border-t border-border hover:bg-muted/30">
+                          <td className="px-4 py-3 font-medium">{iq.full_name}</td>
+                          <td className="px-4 py-3 text-right tabular-nums">{iq.total_readings === 0 ? '—' : iq.total_readings}</td>
+                          <td className={cn(
+                            'px-4 py-3 text-right tabular-nums font-medium',
+                            iq.anomaly_count > 0 ? 'text-red-600 dark:text-red-400' : 'text-green-600 dark:text-green-400'
+                          )}>
+                            {iq.anomaly_count}
+                          </td>
+                          <td className="px-4 py-3 text-right tabular-nums font-medium">
+                            {iq.quality_score !== null ? `${iq.quality_score}%` : '—'}
+                          </td>
+                          <td className="px-4 py-3 text-center">
+                            <span className={cn(
+                              'inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-medium',
+                              iq.badge === 'good' && 'bg-green-100 text-green-800 dark:bg-green-900/40 dark:text-green-300',
+                              iq.badge === 'fair' && 'bg-amber-100 text-amber-800 dark:bg-amber-900/40 dark:text-amber-300',
+                              iq.badge === 'needs_review' && 'bg-red-100 text-red-800 dark:bg-red-900/40 dark:text-red-300',
+                              iq.badge === 'no_data' && 'bg-gray-100 text-gray-800 dark:bg-gray-900/40 dark:text-gray-300',
+                            )}>
+                              {iq.badge === 'good' && 'Good'}
+                              {iq.badge === 'fair' && 'Fair'}
+                              {iq.badge === 'needs_review' && 'Needs Review'}
+                              {iq.badge === 'no_data' && 'No Data'}
+                            </span>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
             </div>
           )}
         </div>

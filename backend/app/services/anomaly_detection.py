@@ -84,6 +84,7 @@ async def detect(cml_point_id: str, company_id: str) -> dict:
         z_score = abs((r["rate_mm_year"] - mean_rate) / std_rate)
         if z_score > 2.0:  # Above 2 standard deviations
             anomalies.append({
+                "reading_id": r["reading_id"],
                 "reading_date": r["reading_date"],
                 "reading_mm": r["reading_mm"],
                 "rate_mm_year": r["rate_mm_year"],
@@ -106,6 +107,7 @@ async def detect(cml_point_id: str, company_id: str) -> dict:
             "cml_point_id": cml_point_id,
             "anomaly_score": a["anomaly_score"],
             "description": a["description"],
+            "thickness_reading_id": a["reading_id"],
         } for a in anomalies]
         db.table("corrosion_anomalies").insert(payload).execute()
     

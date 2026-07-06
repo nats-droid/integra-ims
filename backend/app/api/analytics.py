@@ -6,6 +6,7 @@ from app.services import (
     anomaly_detection,
     fleet_risk,
     data_quality,
+    inspector_quality,
 )
 
 router = APIRouter()
@@ -149,4 +150,17 @@ async def compute_data_quality(
     Based on anomaly frequency and correction rate.
     """
     result = await data_quality.score(company_id)
+    return result
+
+
+@router.get("/analytics/inspector-quality/{company_id}")
+async def get_inspector_quality(
+    company_id: str,
+    user: dict = Depends(verify_jwt),
+):
+    """
+    Compute inspector quality scores — precise via thickness_reading_id.
+    Supervisor view only.
+    """
+    result = await inspector_quality.compute(company_id)
     return result
