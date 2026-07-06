@@ -568,6 +568,13 @@ export default function PlansPage() {
   const supabase = createClient()
   const sb = supabase as any
 
+  const DEMO_USER = {
+    id: '3fca82af-b302-4d1e-8536-b89546ecfb15',
+    company_id: 'c704d7e6-07fb-48a2-9152-564434d8653f',
+    full_name: 'Dicki Wiryawan',
+    role: 'super_admin',
+  }
+
   const [rows, setRows] = useState<PlanRow[]>([])
   const [loading, setLoading] = useState(true)
   const [statusFilter, setStatusFilter] = useState('')
@@ -597,26 +604,20 @@ export default function PlansPage() {
       try {
         setLoading(true)
 
-        const { data: { user } } = await supabase.auth.getUser()
+        const { data: { user } } = { data: { user: DEMO_USER } }
         if (!user) {
           if (!cancelled) setRows([])
           return
         }
 
-        const { data: appUser } = await sb
-          .from('app_users')
-          .select('*')
-          .eq('auth_user_id', user.id)
-          .single()
-
-        const appUserRow = appUser as AppUser | null
-        const companyId = appUserRow?.company_id
+        const appUserRow = DEMO_USER
+        const companyId = DEMO_USER.company_id
         if (!companyId) {
           if (!cancelled) setRows([])
           return
         }
 
-        if (!cancelled) setCurrentUserId(appUserRow.id)
+        if (!cancelled) setCurrentUserId(DEMO_USER.id)
 
         // Fetch plans for this company
         const { data: plansRaw, error: plansErr } = await sb

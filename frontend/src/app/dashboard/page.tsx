@@ -129,6 +129,16 @@ const CHART_COLORS = {
 
 export default function DashboardPage() {
   const supabase = createClient()
+
+  // ── Demo mode (bypass auth) ──────────────────────────────────
+  const DEMO_ENABLED = true
+  const DEMO_USER = {
+    id: '3fca82af-b302-4d1e-8536-b89546ecfb15',
+    company_id: 'c704d7e6-07fb-48a2-9152-564434d8653f',
+    full_name: 'Dicki Wiryawan',
+    role: 'super_admin',
+  }
+
   const [activeTab, setActiveTab] = useState<TabKey>('overview')
   const [kpis, setKpis] = useState<KPI[]>([])
   const [chartData, setChartData] = useState<ChartBar[]>([])
@@ -187,18 +197,8 @@ export default function DashboardPage() {
 
   useEffect(() => {
     async function loadFilters() {
-      const { data: { user } } = await supabase.auth.getUser()
-      if (!user) return
-
-      const { data: appUser } = await supabase
-        .from('app_users')
-        .select('company_id')
-        .eq('auth_user_id', user.id)
-        .maybeSingle() as unknown as { data: { company_id: string } | null }
-
-      if (!appUser?.company_id) return
-
-      const cid = appUser.company_id
+      const cid = DEMO_ENABLED ? DEMO_USER.company_id : null
+      if (!cid) return
 
       // Plant areas
       const { data: areas } = await (supabase as any)
@@ -232,29 +232,9 @@ export default function DashboardPage() {
   const loadData = useCallback(async () => {
     setLoading(true)
     try {
-      const { data: { user } } = await supabase.auth.getUser()
-      if (!user) { setLoading(false); return }
-
-      const { data: appUser } = await supabase
-        .from('app_users')
-        .select('id, company_id, full_name, role')
-        .eq('auth_user_id', user.id)
-        .maybeSingle() as unknown as { data: { id: string; company_id: string; full_name: string; role: string } | null }
-
-      const isSuperAdmin = appUser?.role === 'super_admin'
-
-      // Super Admin: fetch first company as effective company
-      if (!appUser?.company_id && isSuperAdmin) {
-        const { data: firstCompany } = await (supabase as any)
-          .from('companies')
-          .select('id')
-          .order('created_at', { ascending: true })
-          .limit(1)
-          .single()
-        if (firstCompany?.id) {
-          appUser.company_id = firstCompany.id
-        }
-      }
+      const appUser = DEMO_ENABLED
+        ? { id: DEMO_USER.id, company_id: DEMO_USER.company_id, full_name: DEMO_USER.full_name, role: DEMO_USER.role }
+        : null
 
       if (!appUser?.company_id) { setLoading(false); return }
 
@@ -847,15 +827,11 @@ export default function DashboardPage() {
       console.log('Recalculate result:', result)
 
       // Reload anomalies
-      const { data: { user } } = await supabase.auth.getUser()
-      if (!user) return
-      const { data: appUser } = await (supabase as any)
-        .from('app_users')
-        .select('company_id')
-        .eq('auth_user_id', user.id)
-        .maybeSingle()
+      const appUser = DEMO_ENABLED
+        ? { company_id: DEMO_USER.company_id }
+        : null
 
-      if (appUser?.company_id) {
+      if (!appUser?.company_id) return
         const { data: anomalyRows } = await (supabase as any)
           .from('corrosion_anomalies')
           .select('*, cml_points!inner(location_label, equipment_id)')
@@ -885,7 +861,6 @@ export default function DashboardPage() {
             }
           }))
         }
-      }
     } catch (err) {
       console.error('Recalculate error:', err)
     } finally {

@@ -103,6 +103,13 @@ function InspectionsNewPageInner() {
   const supabase = createClient()
   const sb = supabase as any
 
+  const DEMO_USER = {
+    id: '3fca82af-b302-4d1e-8536-b89546ecfb15',
+    company_id: 'c704d7e6-07fb-48a2-9152-564434d8653f',
+    full_name: 'Dicki Wiryawan',
+    role: 'super_admin',
+  }
+
   // --- Auth / Profile ---
   const [appUser, setAppUser] = useState<AppUserRow | null>(null)
   const [loadingProfile, setLoadingProfile] = useState(true)
@@ -154,24 +161,12 @@ function InspectionsNewPageInner() {
   useEffect(() => {
     async function loadProfile() {
       try {
-        const {
-          data: { user },
-        } = await supabase.auth.getUser()
-        if (!user) {
-          toast.error('You must be logged in')
-          router.push('/auth/login')
-          return
-        }
-
-        const { data: profile } = await sb
-          .from('app_users')
-          .select('*')
-          .eq('auth_user_id', user.id)
-          .single()
-
-        if (profile) {
-          setAppUser(profile as AppUserRow)
-        }
+        setAppUser({
+          id: DEMO_USER.id,
+          company_id: DEMO_USER.company_id,
+          full_name: DEMO_USER.full_name,
+          role: DEMO_USER.role,
+        } as AppUserRow)
       } catch (err) {
         console.error('Profile load error:', err)
       } finally {
@@ -204,12 +199,7 @@ function InspectionsNewPageInner() {
   useEffect(() => {
     async function loadAreas() {
       try {
-        const { data: companyData } = await sb
-          .from('app_users')
-          .select('company_id')
-          .eq('auth_user_id', (await supabase.auth.getUser()).data.user?.id)
-          .single()
-        const companyId = (companyData as { company_id: string } | null)?.company_id
+        const companyId = DEMO_USER.company_id
         if (!companyId) return
         const { data } = await sb
           .from('plant_areas')
@@ -268,12 +258,7 @@ function InspectionsNewPageInner() {
 
       setSearching(true)
       try {
-        const { data: companyData } = await sb
-          .from('app_users')
-          .select('company_id')
-          .eq('auth_user_id', (await supabase.auth.getUser()).data.user?.id)
-          .single()
-        const companyId = (companyData as { company_id: string } | null)?.company_id
+        const companyId = DEMO_USER.company_id
 
         if (!companyId) {
           setSearchResults([])

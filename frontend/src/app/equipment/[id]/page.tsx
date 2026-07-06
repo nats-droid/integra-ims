@@ -127,6 +127,13 @@ export default function EquipmentDetailPage() {
   const supabase = createClient()
   const sb = supabase as any
 
+  const DEMO_USER = {
+    id: '3fca82af-b302-4d1e-8536-b89546ecfb15',
+    company_id: 'c704d7e6-07fb-48a2-9152-564434d8653f',
+    full_name: 'Dicki Wiryawan',
+    role: 'super_admin',
+  }
+
   const [data, setData] = useState<EquipmentDetailData | null>(null)
   const [loading, setLoading] = useState(true)
   const [activeTab, setActiveTab] = useState<Tab>('details')
@@ -289,18 +296,8 @@ export default function EquipmentDetailPage() {
 
   // Fetch user role for RBAC
   useEffect(() => {
-    const fetchRole = async () => {
-      const { data: { user } } = await supabase.auth.getUser()
-      if (!user) return
-      const { data: appUser } = await sb
-        .from('app_users')
-        .select('role')
-        .eq('auth_user_id', user.id)
-        .maybeSingle()
-      if (appUser?.role) setUserRole(appUser.role)
-    }
-    fetchRole()
-  }, [supabase, sb])
+    setUserRole(DEMO_USER.role)
+  }, [])
 
   // Save t_required_manual for a CML point
   const saveTRequired = useCallback(async (cmlId: string, tMin: number | null) => {
@@ -351,17 +348,10 @@ export default function EquipmentDetailPage() {
   const handleRecalculate = useCallback(async () => {
     setRecalculating(true)
     try {
-      const { data: { session } } = await supabase.auth.getSession()
-      if (!session?.access_token) {
-        toast.error('Not authenticated')
-        return
-      }
-
       const backendUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000'
       const res = await fetch(`${backendUrl}/api/v1/rl-confidence/recalculate`, {
         method: 'POST',
         headers: {
-          'Authorization': `Bearer ${session.access_token}`,
           'Content-Type': 'application/json',
         },
       })
@@ -419,12 +409,9 @@ export default function EquipmentDetailPage() {
   const fetchDmValidation = useCallback(async (eqId: string) => {
     setDmValidationLoading(true)
     try {
-      const { data: { session } } = await supabase.auth.getSession()
-      const token = session?.access_token
-      if (!token) return
       const backendUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000'
       const res = await fetch(`${backendUrl}/api/v1/analytics/dm-validation/${eqId}/latest`, {
-        headers: { Authorization: `Bearer ${token}` },
+        headers: { 'Content-Type': 'application/json' },
       })
       if (!res.ok) throw new Error('Failed to fetch validation')
       const data = await res.json()
