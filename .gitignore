@@ -54,3 +54,5 @@ supabase/.temp
 frontend/.htpasswd
 frontend/public/set_session.html
 pw_*.py
+.vercel
+.env*
