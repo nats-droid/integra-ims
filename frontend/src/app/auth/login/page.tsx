@@ -2,16 +2,58 @@
 export const dynamic = 'force-dynamic'
 
 import { createClient } from '@/lib/supabase/client'
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
+
+// Demo credentials (public — this is a demo instance)
+const DEMO_EMAIL = 'supervisor@example.com'
+const DEMO_PASSWORD = 'Integra2024!'
 
 export default function LoginPage() {
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [autoLoginAttempted, setAutoLoginAttempted] = useState(false)
   const router = useRouter()
   const supabase = createClient()
+
+  // Auto-login on mount
+  useEffect(() => {
+    let cancelled = false
+
+    async function tryAutoLogin() {
+      // 1. Check existing session
+      const { data: { session } } = await supabase.auth.getSession()
+      if (cancelled) return
+
+      if (session) {
+        // Already logged in — redirect immediately
+        router.push('/dashboard')
+        return
+      }
+
+      // 2. No session — attempt demo login
+      const { error: loginError } = await supabase.auth.signInWithPassword({
+        email: DEMO_EMAIL,
+        password: DEMO_PASSWORD,
+      })
+      if (cancelled) return
+
+      if (loginError) {
+        // Auto-login failed — show form, don't retry
+        setAutoLoginAttempted(true)
+        return
+      }
+
+      // 3. Success — redirect
+      router.push('/dashboard')
+    }
+
+    tryAutoLogin()
+
+    return () => { cancelled = true }
+  }, [router, supabase])
 
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -32,6 +74,19 @@ export default function LoginPage() {
     router.push('/dashboard')
   }
 
+  // Show loading state while auto-login is in progress
+  if (!autoLoginAttempted) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-background">
+        <div className="text-center">
+          <h1 className="text-2xl font-bold tracking-tight">Integra</h1>
+          <p className="text-muted-foreground mt-2 text-sm">Loading demo…</p>
+        </div>
+      </div>
+    )
+  }
+
+  // Auto-login done (failed) — show manual form
   return (
     <div className="min-h-screen flex items-center justify-center bg-background">
       <div className="w-full max-w-sm mx-auto p-6">

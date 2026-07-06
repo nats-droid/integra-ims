@@ -1,20 +1,12 @@
 'use client'
 export const dynamic = 'force-dynamic'
 
-import { usePathname } from 'next/navigation'
-import { useState } from 'react'
+import { createClient } from '@/lib/supabase/client'
+import { useRouter, usePathname } from 'next/navigation'
+import { useEffect, useState } from 'react'
 import Link from 'next/link'
 import { cn } from '@/utils/cn'
-
-// ── Demo mode ─────────────────────────────────────────────
-const DEMO_PROFILE = {
-  id: '3fca82af-b302-4d1e-8536-b89546ecfb15',
-  auth_user_id: 'dd875c77-f125-474c-a533-8de0eba7e8c8',
-  full_name: 'Dicki Wiryawan',
-  company_id: 'c704d7e6-07fb-48a2-9152-564434d8653f',
-  role: 'super_admin',
-  is_active: true,
-} as const
+import type { UserProfile } from '@/types/database'
 
 // Icons as simple SVG components to avoid extra deps
 const Icons = {
@@ -77,9 +69,47 @@ export default function DashboardLayout({
 }: {
   children: React.ReactNode
 }) {
+  const [profile, setProfile] = useState<UserProfile | null>(null)
+  const [loading, setLoading] = useState(true)
   const [sidebarOpen, setSidebarOpen] = useState(true)
+  const router = useRouter()
   const pathname = usePathname()
-  const profile = DEMO_PROFILE
+  const supabase = createClient()
+
+  useEffect(() => {
+    async function loadProfile() {
+      const { data: { user } } = await supabase.auth.getUser()
+      if (!user) {
+        router.push('/auth/login')
+        return
+      }
+
+      const { data } = await supabase
+        .from('app_users')
+        .select('*')
+        .eq('auth_user_id', user.id)
+        .single()
+
+      if (data) {
+        setProfile(data as UserProfile)
+      }
+      setLoading(false)
+    }
+    loadProfile()
+  }, [supabase, router])
+
+  const handleLogout = async () => {
+    await supabase.auth.signOut()
+    router.push('/auth/login')
+  }
+
+  if (loading) {
+    return (
+      <div className="min-h-screen flex items-center justify-center">
+        <div className="animate-spin w-6 h-6 border-2 border-primary border-t-transparent rounded-full" />
+      </div>
+    )
+  }
 
   const filteredNav = navItems.filter(item => {
     if (!item.roles) return true
@@ -156,7 +186,13 @@ export default function DashboardLayout({
             </div>
           )}
 
-          {/* Demo mode — no logout */}
+          <button
+            onClick={handleLogout}
+            className="w-full flex items-center gap-3 px-3 py-2 text-sm text-muted-foreground hover:text-destructive rounded-md hover:bg-destructive/10 transition-colors"
+          >
+            <Icons.LogOut />
+            {sidebarOpen && <span>Logout</span>}
+          </button>
         </div>
       </aside>
 

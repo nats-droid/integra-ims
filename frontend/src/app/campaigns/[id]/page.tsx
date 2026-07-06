@@ -81,13 +81,10 @@ export default function CampaignDetailPage() {
       setLoading(true)
       const supabase = createClient()
       const sb = supabase as any
-      const DEMO_USER = {
-        id: '3fca82af-b302-4d1e-8536-b89546ecfb15',
-        company_id: 'c704d7e6-07fb-48a2-9152-564434d8653f',
-        full_name: 'Dicki Wiryawan',
-        role: 'super_admin',
-      }
-      const { data: appUser } = { data: DEMO_USER }
+      const { data: { user } } = await supabase.auth.getUser()
+      if (!user) return
+
+      const { data: appUser } = await sb.from('app_users').select('company_id, role').eq('auth_user_id', user.id).single()
       if (!appUser?.company_id) return
       setUserRole(appUser.role)
 
