@@ -1,4 +1,5 @@
 from fastapi import APIRouter, Depends
+from pydantic import BaseModel
 
 from app.api.auth import verify_jwt
 from app.services import (
@@ -7,6 +8,7 @@ from app.services import (
     fleet_risk,
     data_quality,
     inspector_quality,
+    ai_insight,
 )
 
 router = APIRouter()
@@ -164,3 +166,80 @@ async def get_inspector_quality(
     """
     result = await inspector_quality.compute(company_id)
     return result
+
+
+# ── AI Insight Endpoints ────────────────────────────────────────────────────
+
+@router.get("/ai/status/{company_id}")
+async def get_ai_status(
+    company_id: str,
+    user: dict = Depends(verify_jwt),
+):
+    """
+    Check if LLM is configured for this company.
+    Returns {has_key, provider} — never exposes the api_key.
+    """
+    config = ai_insight.get_company_llm_config(company_id)
+    return {"has_key": config["has_key"], "provider": config["provider"]}
+
+
+class QARequest(BaseModel):
+    question: str
+
+
+@router.post("/ai/insight/{company_id}")
+async def generate_ai_insight(
+    company_id: str,
+    user: dict = Depends(verify_jwt),
+):
+    """
+    Generate AI insight for a company.
+    Always returns rule_based insights.
+    If LLM is configured, also returns ai_narrative.
+    """
+    from datetime import datetime, timezone
+
+    rule_based = ai_insight.generate_rule_based_insights(company_id)
+    config = ai_insight.get_company_llm_config(company_id)
+    context_summary = ai_insight.build_context(company_id)
+    computed_at = datetime.now(timezone.utc).isoformat()
+
+    ai_narrative = None
+    error = None
+
+    if config["has_key"]:
+        try:
+            prompt = (
+                "You are an asset integrity expert for petrochemical plants. "
+                "Based on the following data summary, provide a concise narrative "
+                "analysis with key risks, recommendations, and priority actions.\n\n"
+                f"{context_summary}"
+            )
+            ai_narrative = ai_insight.call_llm(prompt, config["provider"], config["api_key"])
+        except ValueError as e:
+            error = str(e)
+
+    return {
+        "rule_based": rule_based,
+        "ai_narrative": ai_narrative,
+        "context_summary": context_summary,
+        "computed_at": computed_at,
+        "error": error,
+    }
+
+
+@router.post("/ai/qa/{company_id}")
+async def ask_ai_question(
+    company_id: str,
+    body: QARequest,
+    user: dict = Depends(verify_jwt),
+):
+    """
+    Q&A endpoint — ask a question about asset integrity.
+    Requires LLM API key configured.
+    """
+    try:
+        answer = ai_insight.answer_qa(body.question, company_id)
+        return {"answer": answer, "error": None}
+    except ValueError as e:
+        return {"answer": None, "error": str(e)}

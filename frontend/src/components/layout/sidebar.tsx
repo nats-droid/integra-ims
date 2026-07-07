@@ -25,6 +25,7 @@ const NAV_ITEMS = [
   { href: '/plans', label: 'Inspection Plans', icon: CalendarCheck },
   { href: '/campaigns', label: 'Campaigns', icon: FlaskConical },
   { href: '/dm-screener', label: 'DM Screener', icon: Gauge },
+  { href: '/ai-insight', label: 'AI Insight', icon: FileText },
   { href: '/reports', label: 'Reports', icon: FileText },
   { href: '/settings', label: 'Settings', icon: Settings },
 ]

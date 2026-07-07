@@ -60,7 +60,8 @@ const navItems: NavItem[] = [
   { label: 'Campaign', href: '/campaigns', icon: 'Shield' },
   { label: 'DM Screener', href: '/dm-screener', icon: 'FlaskConical' },
   { label: 'Reports', href: '/reports', icon: 'FileText' },
-  { label: 'AI Insight', href: '/dashboard?tab=ai', icon: 'Brain', roles: ['engineer', 'supervisor', 'super_admin'] },
+  { label: 'AI Insight', href: '/ai-insight', icon: 'Brain', roles: ['engineer', 'supervisor', 'super_admin'] },
+  { label: 'Settings', href: '/settings', icon: 'Settings', roles: ['engineer', 'supervisor', 'super_admin'] },
   { label: 'Admin', href: '/admin', icon: 'Settings', roles: ['super_admin'] },
 ]
 
