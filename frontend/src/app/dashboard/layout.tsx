@@ -3,10 +3,11 @@ export const dynamic = 'force-dynamic'
 
 import { createClient } from '@/lib/supabase/client'
 import { useRouter, usePathname } from 'next/navigation'
-import { useEffect, useState } from 'react'
+import { useEffect, useState, useRef, useCallback } from 'react'
 import Link from 'next/link'
 import { cn } from '@/utils/cn'
 import type { UserProfile } from '@/types/database'
+import { Bell } from 'lucide-react'
 
 // Icons as simple SVG components to avoid extra deps
 const Icons = {
@@ -65,6 +66,45 @@ const navItems: NavItem[] = [
   { label: 'Admin', href: '/admin', icon: 'Settings', roles: ['super_admin'] },
 ]
 
+// ── Notification Types ──────────────────────────────────────────────────────
+
+interface Notification {
+  id: string
+  type: string
+  title: string
+  message: string
+  is_read: boolean
+  related_id: string | null
+  equipment_id: string | null
+  created_at: string
+}
+
+const ZONE_ICONS: Record<string, string> = {
+  overdue: '⚠️',
+  due_7: '🔴',
+  due_30: '🟠',
+  due_60: '🟡',
+  due_90: '📅',
+}
+
+function relativeTime(isoDate: string): string {
+  const now = Date.now()
+  const then = new Date(isoDate).getTime()
+  const diffMs = now - then
+  const diffMin = Math.floor(diffMs / 60000)
+  const diffHr = Math.floor(diffMs / 3600000)
+  const diffDay = Math.floor(diffMs / 86400000)
+
+  if (diffMin < 1) return 'Just now'
+  if (diffMin < 60) return `${diffMin}m ago`
+  if (diffHr < 24) return `${diffHr}h ago`
+  if (diffDay === 1) return 'Yesterday'
+  if (diffDay < 7) return `${diffDay}d ago`
+  return new Date(isoDate).toLocaleDateString()
+}
+
+// ── Component ───────────────────────────────────────────────────────────────
+
 export default function DashboardLayout({
   children,
 }: {
@@ -76,6 +116,37 @@ export default function DashboardLayout({
   const router = useRouter()
   const pathname = usePathname()
   const supabase = createClient()
+
+  // Notification state
+  const [notifications, setNotifications] = useState<Notification[]>([])
+  const [unreadCount, setUnreadCount] = useState(0)
+  const [dropdownOpen, setDropdownOpen] = useState(false)
+  const [markingAllRead, setMarkingAllRead] = useState(false)
+  const dropdownRef = useRef<HTMLDivElement>(null)
+
+  const backendUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000'
+
+  // ── Fetch notifications ─────────────────────────────────────────────────
+
+  const fetchNotifications = useCallback(async () => {
+    try {
+      const { data: { session } } = await supabase.auth.getSession()
+      if (!session?.access_token) return
+
+      const res = await fetch(`${backendUrl}/api/v1/notifications/me`, {
+        headers: { Authorization: `Bearer ${session.access_token}` },
+      })
+      if (!res.ok) return
+
+      const data = await res.json()
+      setNotifications(data.notifications || [])
+      setUnreadCount(data.unread_count || 0)
+    } catch {
+      // Silent fail
+    }
+  }, [backendUrl, supabase])
+
+  // ── Load profile + initial fetch + polling ──────────────────────────────
 
   useEffect(() => {
     async function loadProfile() {
@@ -99,10 +170,89 @@ export default function DashboardLayout({
     loadProfile()
   }, [supabase, router])
 
+  useEffect(() => {
+    if (!loading) {
+      fetchNotifications()
+      const interval = setInterval(fetchNotifications, 5 * 60 * 1000) // 5 min
+      return () => clearInterval(interval)
+    }
+  }, [loading, fetchNotifications])
+
+  // ── Click outside to close dropdown ─────────────────────────────────────
+
+  useEffect(() => {
+    function handleClickOutside(event: MouseEvent) {
+      if (dropdownRef.current && !dropdownRef.current.contains(event.target as Node)) {
+        setDropdownOpen(false)
+      }
+    }
+    if (dropdownOpen) {
+      document.addEventListener('mousedown', handleClickOutside)
+    }
+    return () => document.removeEventListener('mousedown', handleClickOutside)
+  }, [dropdownOpen])
+
+  // ── Handlers ────────────────────────────────────────────────────────────
+
   const handleLogout = async () => {
     await supabase.auth.signOut()
     router.push('/auth/login')
   }
+
+  const markAsRead = async (notif: Notification) => {
+    try {
+      const { data: { session } } = await supabase.auth.getSession()
+      if (!session?.access_token) return
+
+      await fetch(`${backendUrl}/api/v1/notifications/${notif.id}/read`, {
+        method: 'PATCH',
+        headers: { Authorization: `Bearer ${session.access_token}` },
+      })
+
+      // Update local state
+      setNotifications(prev =>
+        prev.map(n => n.id === notif.id ? { ...n, is_read: true } : n)
+      )
+      setUnreadCount(prev => Math.max(0, prev - 1))
+
+      // Navigate to equipment if available
+      if (notif.equipment_id) {
+        router.push(`/equipment/${notif.equipment_id}`)
+      }
+      setDropdownOpen(false)
+    } catch {
+      // Silent fail
+    }
+  }
+
+  const markAllRead = async () => {
+    if (markingAllRead) return
+    setMarkingAllRead(true)
+
+    try {
+      const { data: { session } } = await supabase.auth.getSession()
+      if (!session?.access_token) return
+
+      const unread = notifications.filter(n => !n.is_read)
+      await Promise.all(
+        unread.map(n =>
+          fetch(`${backendUrl}/api/v1/notifications/${n.id}/read`, {
+            method: 'PATCH',
+            headers: { Authorization: `Bearer ${session.access_token}` },
+          })
+        )
+      )
+
+      setNotifications(prev => prev.map(n => ({ ...n, is_read: true })))
+      setUnreadCount(0)
+    } catch {
+      // Silent fail
+    } finally {
+      setMarkingAllRead(false)
+    }
+  }
+
+  // ── Render ──────────────────────────────────────────────────────────────
 
   if (loading) {
     return (
@@ -197,10 +347,94 @@ export default function DashboardLayout({
         </div>
       </aside>
 
-      {/* Main content */}
-      <main className="flex-1 overflow-y-auto bg-background">
-        {children}
-      </main>
+      {/* Main area: header + content */}
+      <div className="flex-1 flex flex-col overflow-hidden">
+        {/* Header bar */}
+        <header className="h-12 bg-white border-b border-border flex items-center justify-end px-4 flex-shrink-0">
+          {/* Bell notification */}
+          <div className="relative" ref={dropdownRef}>
+            <button
+              onClick={() => setDropdownOpen(!dropdownOpen)}
+              className="relative p-2 rounded-md hover:bg-accent transition-colors"
+              aria-label="Notifications"
+            >
+              <Bell className="w-5 h-5 text-muted-foreground" />
+              {unreadCount > 0 && (
+                <span className="absolute -top-0.5 -right-0.5 min-w-[18px] h-[18px] flex items-center justify-center rounded-full bg-red-500 text-white text-[10px] font-bold px-1 leading-none">
+                  {unreadCount > 9 ? '9+' : unreadCount}
+                </span>
+              )}
+            </button>
+
+            {/* Dropdown */}
+            {dropdownOpen && (
+              <div className="absolute right-0 top-full mt-1 w-96 max-h-[400px] bg-white rounded-lg shadow-lg border border-border overflow-hidden z-50">
+                {/* Dropdown header */}
+                <div className="flex items-center justify-between px-4 py-3 border-b border-border">
+                  <h3 className="text-sm font-semibold text-foreground">Notifications</h3>
+                  {unreadCount > 0 && (
+                    <button
+                      onClick={markAllRead}
+                      disabled={markingAllRead}
+                      className="text-xs text-primary hover:text-primary/80 font-medium disabled:opacity-50"
+                    >
+                      {markingAllRead ? 'Marking...' : 'Mark all read'}
+                    </button>
+                  )}
+                </div>
+
+                {/* Notification list */}
+                <div className="overflow-y-auto max-h-[340px]">
+                  {notifications.length === 0 ? (
+                    <div className="px-4 py-8 text-center text-sm text-muted-foreground">
+                      No notifications
+                    </div>
+                  ) : (
+                    notifications.map((notif) => (
+                      <button
+                        key={notif.id}
+                        onClick={() => markAsRead(notif)}
+                        className={cn(
+                          "w-full text-left px-4 py-3 border-b border-border/50 hover:bg-accent/50 transition-colors",
+                          !notif.is_read && "bg-blue-50"
+                        )}
+                      >
+                        <div className="flex items-start gap-2">
+                          <span className="text-base flex-shrink-0 mt-0.5">
+                            {ZONE_ICONS[notif.type] || '🔔'}
+                          </span>
+                          <div className="flex-1 min-w-0">
+                            <p className={cn(
+                              "text-sm truncate",
+                              !notif.is_read ? "font-semibold text-foreground" : "font-normal text-muted-foreground"
+                            )}>
+                              {notif.title}
+                            </p>
+                            <p className="text-xs text-muted-foreground mt-0.5 line-clamp-2">
+                              {notif.message}
+                            </p>
+                            <p className="text-[11px] text-muted-foreground/60 mt-1">
+                              {relativeTime(notif.created_at)}
+                            </p>
+                          </div>
+                          {!notif.is_read && (
+                            <div className="w-2 h-2 rounded-full bg-primary flex-shrink-0 mt-1.5" />
+                          )}
+                        </div>
+                      </button>
+                    ))
+                  )}
+                </div>
+              </div>
+            )}
+          </div>
+        </header>
+
+        {/* Main content */}
+        <main className="flex-1 overflow-y-auto bg-background">
+          {children}
+        </main>
+      </div>
     </div>
   )
 }

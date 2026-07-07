@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, Header, HTTPException
 from pydantic import BaseModel
 
 from app.api.auth import verify_jwt
@@ -9,6 +9,7 @@ from app.services import (
     data_quality,
     inspector_quality,
     ai_insight,
+    notification,
 )
 
 router = APIRouter()
@@ -243,3 +244,143 @@ async def ask_ai_question(
         return {"answer": answer, "error": None}
     except ValueError as e:
         return {"answer": None, "error": str(e)}
+
+
+# ── Notification Endpoints ──────────────────────────────────────────────────
+
+@router.post("/notifications/run")
+async def run_notifications(
+    x_cron_secret: str = Header(None, alias="X-Cron-Secret"),
+):
+    """
+    Cron endpoint — generate due-date notifications for all companies.
+    No JWT auth. Secured via X-Cron-Secret header.
+    """
+    import os
+    expected = os.getenv("CRON_SECRET", "")
+    if not expected:
+        raise HTTPException(status_code=500, detail="CRON_SECRET not configured")
+    if x_cron_secret != expected:
+        raise HTTPException(status_code=401, detail="Invalid cron secret")
+
+    result = notification.run_for_all_companies()
+    return result
+
+
+@router.get("/notifications/me")
+async def get_my_notifications(
+    user: dict = Depends(verify_jwt),
+):
+    """
+    Get notifications for the current user's company.
+    Returns notifications list + unread_count.
+    Joins inspection_plans to include equipment_id for frontend redirect.
+    """
+    from app.core.database import get_db
+
+    db = get_db()
+    company_id = user.get("company_id")
+
+    # If company_id not in JWT, look up from app_users table
+    if not company_id:
+        user_id = user.get("user_id")
+        if user_id:
+            app_user = (
+                db.table("app_users")
+                .select("company_id")
+                .eq("auth_user_id", user_id)
+                .maybe_single()
+                .execute()
+            )
+            company_id = (app_user.data or {}).get("company_id")
+
+    if not company_id:
+        return {"notifications": [], "unread_count": 0}
+
+    # Fetch notifications
+    result = (
+        db.table("notifications")
+        .select("*")
+        .eq("company_id", company_id)
+        .order("created_at", desc=True)
+        .limit(20)
+        .execute()
+    )
+    notifs = result.data or []
+
+    # Unread count
+    unread_result = (
+        db.table("notifications")
+        .select("id", count="exact")
+        .eq("company_id", company_id)
+        .eq("is_read", False)
+        .execute()
+    )
+    unread_count = unread_result.count if unread_result.count is not None else 0
+
+    # Join: get equipment_id from inspection_plans for plan-related notifs
+    plan_ids = list({n["related_id"] for n in notifs if n.get("related_id")})
+    equipment_map: dict[str, str] = {}
+    if plan_ids:
+        plans_result = (
+            db.table("inspection_plans")
+            .select("id, equipment_id")
+            .in_("id", plan_ids)
+            .execute()
+        )
+        for p in (plans_result.data or []):
+            equipment_map[p["id"]] = p.get("equipment_id")
+
+    # Attach equipment_id to each notification
+    enriched = []
+    for n in notifs:
+        enriched.append({
+            **n,
+            "equipment_id": equipment_map.get(n.get("related_id")),
+        })
+
+    return {"notifications": enriched, "unread_count": unread_count}
+
+
+@router.patch("/notifications/{notification_id}/read")
+async def mark_notification_read(
+    notification_id: str,
+    user: dict = Depends(verify_jwt),
+):
+    """
+    Mark a single notification as read.
+    Scoped to user's company (RLS safety).
+    """
+    from app.core.database import get_db
+
+    db = get_db()
+    company_id = user.get("company_id")
+
+    # If company_id not in JWT, look up from app_users table
+    if not company_id:
+        user_id = user.get("user_id")
+        if user_id:
+            app_user = (
+                db.table("app_users")
+                .select("company_id")
+                .eq("auth_user_id", user_id)
+                .maybe_single()
+                .execute()
+            )
+            company_id = (app_user.data or {}).get("company_id")
+
+    if not company_id:
+        raise HTTPException(status_code=400, detail="Company not found")
+
+    result = (
+        db.table("notifications")
+        .update({"is_read": True})
+        .eq("id", notification_id)
+        .eq("company_id", company_id)
+        .execute()
+    )
+
+    if not result.data:
+        raise HTTPException(status_code=404, detail="Notification not found")
+
+    return {"success": True}
