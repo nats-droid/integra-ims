@@ -124,7 +124,7 @@ export default function DashboardLayout({
   const [markingAllRead, setMarkingAllRead] = useState(false)
   const dropdownRef = useRef<HTMLDivElement>(null)
 
-  const backendUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000'
+  const backendUrl = ''
 
   // ── Fetch notifications ─────────────────────────────────────────────────
 
@@ -133,7 +133,7 @@ export default function DashboardLayout({
       const { data: { session } } = await supabase.auth.getSession()
       if (!session?.access_token) return
 
-      const res = await fetch(`${backendUrl}/api/v1/notifications/me`, {
+      const res = await fetch(`/api/backend/api/v1/notifications/me`, {
         headers: { Authorization: `Bearer ${session.access_token}` },
       })
       if (!res.ok) return
@@ -204,7 +204,7 @@ export default function DashboardLayout({
       const { data: { session } } = await supabase.auth.getSession()
       if (!session?.access_token) return
 
-      await fetch(`${backendUrl}/api/v1/notifications/${notif.id}/read`, {
+      await fetch(`/api/backend/api/v1/notifications/${notif.id}/read`, {
         method: 'PATCH',
         headers: { Authorization: `Bearer ${session.access_token}` },
       })
@@ -236,7 +236,7 @@ export default function DashboardLayout({
       const unread = notifications.filter(n => !n.is_read)
       await Promise.all(
         unread.map(n =>
-          fetch(`${backendUrl}/api/v1/notifications/${n.id}/read`, {
+          fetch(`/api/backend/api/v1/notifications/${n.id}/read`, {
             method: 'PATCH',
             headers: { Authorization: `Bearer ${session.access_token}` },
           })

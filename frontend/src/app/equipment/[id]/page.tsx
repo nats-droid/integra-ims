@@ -357,8 +357,8 @@ export default function EquipmentDetailPage() {
         return
       }
 
-      const backendUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000'
-      const res = await fetch(`${backendUrl}/api/v1/rl-confidence/recalculate`, {
+      const backendUrl = ''
+      const res = await fetch(`/api/backend/api/v1/rl-confidence/recalculate`, {
         method: 'POST',
         headers: {
           'Authorization': `Bearer ${session.access_token}`,
@@ -422,8 +422,8 @@ export default function EquipmentDetailPage() {
       const { data: { session } } = await supabase.auth.getSession()
       const token = session?.access_token
       if (!token) return
-      const backendUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000'
-      const res = await fetch(`${backendUrl}/api/v1/analytics/dm-validation/${eqId}/latest`, {
+      const backendUrl = ''
+      const res = await fetch(`/api/backend/api/v1/analytics/dm-validation/${eqId}/latest`, {
         headers: { Authorization: `Bearer ${token}` },
       })
       if (!res.ok) throw new Error('Failed to fetch validation')

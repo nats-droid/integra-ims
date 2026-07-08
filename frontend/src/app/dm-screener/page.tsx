@@ -145,8 +145,8 @@ export default function DmScreenerPage() {
     }
     setValidating(true)
     try {
-      const backendUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000'
-      const res = await fetch(`${backendUrl}/api/v1/analytics/dm-validation/${companyId}`, {
+      const backendUrl = ''
+      const res = await fetch(`/api/backend/api/v1/analytics/dm-validation/${companyId}`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
       })
@@ -189,8 +189,8 @@ export default function DmScreenerPage() {
       if (hasPwht !== null) params.set('has_pwht', String(hasPwht))
 
       // Try backend API first
-      const backendUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000'
-      const res = await fetch(`${backendUrl}/api/dm-screener/query?${params}`, { cache: 'no-store' })
+      const backendUrl = ''
+      const res = await fetch(`/api/backend/api/dm-screener/query?${params}`, { cache: 'no-store' })
 
       if (!res.ok) {
         // Fallback: direct Supabase KB match

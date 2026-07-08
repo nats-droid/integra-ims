@@ -27,7 +27,7 @@ export default function SettingsPage() {
   const [configStatus, setConfigStatus] = useState<AIConfigStatus | null>(null)
 
   const supabase = createClient()
-  const backendUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000'
+  const backendUrl = ''
 
   // Load user profile + AI config
   useEffect(() => {
@@ -49,7 +49,7 @@ export default function SettingsPage() {
         const { data: { session } } = await supabase.auth.getSession()
         if (session) {
           try {
-            const res = await fetch(`${backendUrl}/api/v1/ai/status/${(profile as Record<string, unknown>).company_id}`, {
+            const res = await fetch(`/api/backend/api/v1/ai/status/${(profile as Record<string, unknown>).company_id}`, {
               headers: { Authorization: `Bearer ${session.access_token}` },
             })
             if (res.ok) {
@@ -121,7 +121,7 @@ export default function SettingsPage() {
     }
 
     try {
-      const res = await fetch(`${backendUrl}/api/v1/ai/insight/${companyId}`, {
+      const res = await fetch(`/api/backend/api/v1/ai/insight/${companyId}`, {
         method: 'POST',
         headers: {
           Authorization: `Bearer ${session.access_token}`,

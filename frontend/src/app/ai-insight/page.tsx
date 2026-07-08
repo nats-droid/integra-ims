@@ -71,7 +71,7 @@ export default function AIInsightPage() {
   const [qaError, setQaError] = useState<string | null>(null)
 
   const supabase = createClient()
-  const backendUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000'
+  const backendUrl = ''
 
   // Load user profile
   useEffect(() => {
@@ -102,7 +102,7 @@ export default function AIInsightPage() {
       if (!session) return
 
       try {
-        const res = await fetch(`${backendUrl}/api/v1/ai/status/${companyId}`, {
+        const res = await fetch(`/api/backend/api/v1/ai/status/${companyId}`, {
           headers: { Authorization: `Bearer ${session.access_token}` },
         })
         if (res.ok) {
@@ -126,7 +126,7 @@ export default function AIInsightPage() {
     if (!session) return
 
     try {
-      const res = await fetch(`${backendUrl}/api/v1/ai/insight/${companyId}`, {
+      const res = await fetch(`/api/backend/api/v1/ai/insight/${companyId}`, {
         method: 'POST',
         headers: {
           Authorization: `Bearer ${session.access_token}`,
@@ -162,7 +162,7 @@ export default function AIInsightPage() {
     if (!session) return
 
     try {
-      const res = await fetch(`${backendUrl}/api/v1/ai/insight/${companyId}`, {
+      const res = await fetch(`/api/backend/api/v1/ai/insight/${companyId}`, {
         method: 'POST',
         headers: {
           Authorization: `Bearer ${session.access_token}`,
@@ -196,7 +196,7 @@ export default function AIInsightPage() {
     if (!session) return
 
     try {
-      const res = await fetch(`${backendUrl}/api/v1/ai/qa/${companyId}`, {
+      const res = await fetch(`/api/backend/api/v1/ai/qa/${companyId}`, {
         method: 'POST',
         headers: {
           Authorization: `Bearer ${session.access_token}`,

@@ -598,8 +598,8 @@ export default function DashboardPage() {
           return
         }
 
-        const backendUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000'
-        const res = await fetch(`${backendUrl}/api/v1/analytics/inspector-quality/${companyId}`, {
+        const backendUrl = ''
+        const res = await fetch(`/api/backend/api/v1/analytics/inspector-quality/${companyId}`, {
           headers: { 'Authorization': `Bearer ${session.access_token}` },
         })
 
@@ -829,8 +829,8 @@ export default function DashboardPage() {
         return
       }
 
-      const backendUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000'
-      const res = await fetch(`${backendUrl}/api/v1/analytics/anomalies/recalculate`, {
+      const backendUrl = ''
+      const res = await fetch(`/api/backend/api/v1/analytics/anomalies/recalculate`, {
         method: 'POST',
         headers: {
           'Authorization': `Bearer ${session.access_token}`,
@@ -905,8 +905,8 @@ export default function DashboardPage() {
         return
       }
 
-      const backendUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000'
-      const res = await fetch(`${backendUrl}/api/v1/analytics/fleet-risk/${companyId}`, {
+      const backendUrl = ''
+      const res = await fetch(`/api/backend/api/v1/analytics/fleet-risk/${companyId}`, {
         method: 'POST',
         headers: {
           'Authorization': `Bearer ${session.access_token}`,
