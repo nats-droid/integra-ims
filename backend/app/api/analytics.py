@@ -194,7 +194,7 @@ async def get_ai_status(
 async def save_ai_config(
     company_id: str,
     request: Request,
-    db: Client = Depends(get_db),
+    user: dict = Depends(verify_jwt),
 ):
     """Save LLM provider and API key for a company."""
     try:
@@ -214,6 +214,7 @@ async def save_ai_config(
                 content={"error": "provider must be gemini or openai"},
             )
 
+        db = get_db()
         db.table("companies").update({
             "llm_provider": provider,
             "llm_api_key": api_key,
