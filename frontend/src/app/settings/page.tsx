@@ -85,17 +85,22 @@ export default function SettingsPage() {
     }
 
     try {
-      // Save to companies table directly via Supabase
-      const { error } = await (supabase
-        .from('companies') as unknown as { update: (data: Record<string, unknown>) => { eq: (col: string, val: string) => Promise<{ error: unknown }> } })
-        .update({
-          llm_provider: provider,
-          llm_api_key: apiKey.trim(),
-        })
-        .eq('id', companyId)
+      const res = await fetch(`/api/backend/api/v1/ai/config/${companyId}`, {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${session.access_token}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          provider,
+          api_key: apiKey.trim(),
+        }),
+      })
 
-      if (error) {
-        toast.error(`Failed to save: ${(error as Error).message || 'Unknown error'}`)
+      const data = await res.json()
+
+      if (!res.ok) {
+        toast.error(`Failed to save: ${data.error || 'Unknown error'}`)
       } else {
         toast.success('AI configuration saved')
         setConfigStatus({ has_key: true, provider })

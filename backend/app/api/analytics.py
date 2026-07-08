@@ -1,7 +1,13 @@
-from fastapi import APIRouter, Depends, Header, HTTPException
+from fastapi import APIRouter, Depends, Header, HTTPException, Request
+from fastapi.responses import JSONResponse
 from pydantic import BaseModel
+import logging
+
+logger = logging.getLogger(__name__)
 
 from app.api.auth import verify_jwt
+from app.core.database import get_db
+from supabase import Client
 from app.services import (
     remaining_life,
     anomaly_detection,
@@ -182,6 +188,42 @@ async def get_ai_status(
     """
     config = ai_insight.get_company_llm_config(company_id)
     return {"has_key": config["has_key"], "provider": config["provider"]}
+
+
+@router.post("/ai/config/{company_id}")
+async def save_ai_config(
+    company_id: str,
+    request: Request,
+    db: Client = Depends(get_db),
+):
+    """Save LLM provider and API key for a company."""
+    try:
+        body = await request.json()
+        provider = body.get("provider", "").strip()
+        api_key = body.get("api_key", "").strip()
+
+        if not provider or not api_key:
+            return JSONResponse(
+                status_code=400,
+                content={"error": "provider and api_key are required"},
+            )
+
+        if provider not in ("gemini", "openai"):
+            return JSONResponse(
+                status_code=400,
+                content={"error": "provider must be gemini or openai"},
+            )
+
+        db.table("companies").update({
+            "llm_provider": provider,
+            "llm_api_key": api_key,
+        }).eq("id", company_id).execute()
+
+        return {"success": True, "provider": provider}
+
+    except Exception as e:
+        logger.error(f"save_ai_config error: {e}")
+        return JSONResponse(status_code=500, content={"error": str(e)})
 
 
 class QARequest(BaseModel):
