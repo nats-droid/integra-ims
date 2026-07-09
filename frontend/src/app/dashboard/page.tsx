@@ -18,6 +18,8 @@ import {
   ExternalLink,
   Inbox,
   RefreshCw,
+  Map,
+  Loader2,
 } from 'lucide-react'
 import {
   BarChart,
@@ -30,10 +32,11 @@ import {
   Cell,
 } from 'recharts'
 import DrillDownTable from '@/components/DrillDownTable'
+import PlantOverviewCharts from '@/components/PlantOverviewCharts'
 
 /* ── Types ─────────────────────────────────────────────────── */
 
-type TabKey = 'overview' | 'worklist' | 'pending' | 'workload' | 'rl' | 'anomaly' | 'fleet'
+type TabKey = 'overview' | 'worklist' | 'pending' | 'workload' | 'rl' | 'anomaly' | 'fleet' | 'plant'
 
 interface KPI {
   label: string
@@ -94,6 +97,7 @@ const tabs: { key: TabKey; label: string; icon: React.ReactNode }[] = [
   { key: 'rl',        label: 'Remaining Life',     icon: <TrendingDown className="h-4 w-4" /> },
   { key: 'anomaly',   label: 'Anomaly',            icon: <AlertTriangle className="h-4 w-4" /> },
   { key: 'fleet',     label: 'Fleet Risk',         icon: <ShieldAlert className="h-4 w-4" /> },
+  { key: 'plant',     label: 'Plant Overview',      icon: <Map className="h-4 w-4" /> },
 ]
 
 /* ── Date helpers ──────────────────────────────────────────── */
@@ -158,6 +162,13 @@ export default function DashboardPage() {
   const [anomalies, setAnomalies] = useState<any[]>([])
   const [anomaliesLoading, setAnomaliesLoading] = useState(false)
   const [recalculating, setRecalculating] = useState(false)
+
+  // Plant Overview state
+  const [plantCRData, setPlantCRData] = useState<{area: string, avg_cr: number}[]>([])
+  const [plantDMData, setPlantDMData] = useState<{area: string, dm_count: number}[]>([])
+  const [plantFluidData, setPlantFluidData] = useState<{fluid: string, count: number}[]>([])
+  const [plantRLData, setPlantRLData] = useState<{area: string, avg_rl: number}[]>([])
+  const [plantLoading, setPlantLoading] = useState(false)
 
   // Fleet Risk state
   const [fleetRiskData, setFleetRiskData] = useState<any>(null)
@@ -509,6 +520,89 @@ export default function DashboardPage() {
       }
     }
     load()
+  }, [activeTab, companyId, supabase])
+
+  /* ── Load Plant Overview ─────────────────────────────────── */
+  useEffect(() => {
+    if (activeTab !== 'plant' || !companyId) return
+    setPlantLoading(true)
+    async function loadPlant() {
+      try {
+        // CR per area: dari cml_points + rl_predictions + equipment + plant_areas
+        const { data: crData }: { data: any } = await supabase
+          .from('rl_predictions')
+          .select('cml_points(equipment(area_id, plant_areas(name))), confidence_low')
+          .eq('company_id', companyId)
+        
+        // Group by area
+        const areaMap: Record<string, number[]> = {}
+        crData?.forEach((row: any) => {
+          const area = row.cml_points?.equipment?.plant_areas?.name || 'Unknown'
+          const cr = row.confidence_low
+          if (cr && cr > 0) {
+            if (!areaMap[area]) areaMap[area] = []
+            areaMap[area].push(cr)
+          }
+        })
+        const crResult = Object.entries(areaMap)
+          .map(([area, vals]) => ({ area, avg_cr: vals.reduce((a,b) => a+b, 0) / vals.length }))
+          .sort((a, b) => b.avg_cr - a.avg_cr)
+        setPlantCRData(crResult)
+
+        // DM per area
+        const { data: dmData }: { data: any } = await supabase
+          .from('dm_validation_results')
+          .select('equipment_id, dm_name, status, equipment(area_id, plant_areas(name))')
+          .eq('company_id', companyId)
+          .eq('status', 'Active')
+        
+        const dmMap: Record<string, number> = {}
+        dmData?.forEach((row: any) => {
+          const area = row.equipment?.plant_areas?.name || 'Unknown'
+          dmMap[area] = (dmMap[area] || 0) + 1
+        })
+        setPlantDMData(Object.entries(dmMap).map(([area, dm_count]) => ({ area, dm_count })).sort((a,b) => b.dm_count - a.dm_count))
+
+        // Fluid service distribution
+        const { data: eqData }: { data: any } = await supabase
+          .from('equipment')
+          .select('fluid_service')
+          .eq('company_id', companyId)
+          .not('fluid_service', 'is', null)
+        
+        const fluidMap: Record<string, number> = {}
+        eqData?.forEach((row: any) => {
+          const f = row.fluid_service || 'Unknown'
+          fluidMap[f] = (fluidMap[f] || 0) + 1
+        })
+        setPlantFluidData(Object.entries(fluidMap).map(([fluid, count]) => ({ fluid, count })))
+
+        // Remaining Life per area
+        const { data: rlData }: { data: any } = await supabase
+          .from('rl_predictions')
+          .select('confidence_low, cml_points(equipment(area_id, plant_areas(name)))')
+          .eq('company_id', companyId)
+          .not('confidence_low', 'is', null)
+        
+        const rlMap: Record<string, number[]> = {}
+        rlData?.forEach((row: any) => {
+          const area = row.cml_points?.equipment?.plant_areas?.name || 'Unknown'
+          if (row.confidence_low) {
+            if (!rlMap[area]) rlMap[area] = []
+            rlMap[area].push(row.confidence_low)
+          }
+        })
+        setPlantRLData(Object.entries(rlMap)
+          .map(([area, vals]) => ({ area, avg_rl: vals.reduce((a,b) => a+b,0) / vals.length }))
+          .sort((a,b) => a.avg_rl - b.avg_rl))
+
+      } catch(err) {
+        console.error('Plant overview error:', err)
+      } finally {
+        setPlantLoading(false)
+      }
+    }
+    loadPlant()
   }, [activeTab, companyId, supabase])
 
   /* ── Load Workload (supervisor only) ───────────────────── */
@@ -1919,6 +2013,22 @@ export default function DashboardPage() {
               </>
             )
           })()}
+        </div>
+      )}
+
+      {activeTab === 'plant' && (
+        <div className="space-y-6">
+          {plantLoading && <div className="flex justify-center py-20"><Loader2 className="h-8 w-8 animate-spin text-primary" /></div>}
+          {!plantLoading && (
+            <>
+              <PlantOverviewCharts
+                crData={plantCRData}
+                dmData={plantDMData}
+                fluidData={plantFluidData}
+                rlData={plantRLData}
+              />
+            </>
+          )}
         </div>
       )}
     </div>

@@ -69,6 +69,7 @@ interface WeibullRow {
 
 interface SurvivalRow {
   equipment_id: string
+  cml_point_id: string
   median_survival: number
   ci_low: number
   ci_high: number
