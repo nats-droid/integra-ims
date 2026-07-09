@@ -250,8 +250,7 @@ def run_xgboost_shap(df: pd.DataFrame, company_id: str, db: Client) -> int:
                 "equipment_id": eq_id,
                 "risk_score": round(float(risk_score[idx]), 4),
                 "risk_level": df.at[eq_id, "risk_level"],
-                "top_feature": FEATURE_COLS[top_idx],
-                "shap_values": [round(float(v), 4) for v in sv.tolist()],
+                "shap_values": [round(float(v), 4) for v in (sv.tolist() if not isinstance(sv.tolist()[0], list) else [sum(x) for x in zip(*sv.tolist())])],
                 "computed_at": _now_iso(),
             }
         )
@@ -452,9 +451,7 @@ def run_regression_trends(company_id: str, db: Client) -> int:
                 "cml_point_id": cml["id"],
                 "equipment_id": cml["equipment_id"],
                 "r_squared": round(float(r2), 4),
-                "projected_5yr": round(float(projections[0]), 2),
-                "projected_10yr": round(float(projections[1]), 2),
-                "t_required": t_req,
+                "projected_thickness": {"5yr": round(float(projections[0]), 3), "10yr": round(float(projections[1]), 3)},
                 "computed_at": _now_iso(),
             }
         )
@@ -549,18 +546,19 @@ def run_weibull(company_id: str, db: Client) -> int:
             # PoF curve: t=0..30 years
             pof_curve = []
             for t in range(31):
-                p = float(1 - wf.survival_function_at_times(t).values[0])
+                sf = wf.survival_function_at_times([t])
+                sf_val = float(np.array(sf).flat[0])
+                p = float(1 - sf_val)
                 pof_curve.append({"t": t, "pof": round(p, 4)})
 
             rows.append(
                 {
                     "id": _uid(),
                     "company_id": company_id,
-                    "equipment_id": eq_id,
                     "beta": beta,
                     "eta": eta,
-                    "b10_years": b10,
-                    "b50_years": b50,
+                    "b10_life": b10,
+                    "b50_life": b50,
                     "pof_curve": pof_curve,
                     "computed_at": _now_iso(),
                 }
@@ -652,29 +650,43 @@ def run_survival(company_id: str, db: Client) -> int:
             kmf = KaplanMeierFitter()
             kmf.fit(durations, event_observed=events)
 
-            median = float(kmf.median_survival_time_)
-            ci = kmf.confidence_interval_survival_function_
+            import math
+            def safe_f(v, default=0.0):
+                try:
+                    f = float(v)
+                    return f if math.isfinite(f) else default
+                except:
+                    return default
 
-            # Get CI at median (or closest timepoint)
+            median = safe_f(kmf.median_survival_time_, default=100.0)
+            ci = kmf.confidence_interval_survival_function_
             ci_times = ci.index.values
-            closest_idx = int(np.argmin(np.abs(ci_times - median)))
-            ci_low = round(float(ci.iloc[closest_idx, 0]), 2)
-            ci_high = round(float(ci.iloc[closest_idx, 1]), 2)
+            closest_idx = int(np.argmin(np.abs(ci_times - min(median, float(ci_times.max())))))
+            ci_low = round(safe_f(ci.iloc[closest_idx, 0], default=0.0), 2)
+            ci_high = round(safe_f(ci.iloc[closest_idx, 1], default=1.0), 2)
 
             # Survival curve: 30 sample points
             sf = kmf.survival_function_
             max_t = min(float(sf.index.max()), 50.0)
             sample_times = np.linspace(0, max_t, 30)
             survival_curve = []
+            import math
+            def safe_float(v):
+                try:
+                    f = float(v)
+                    return f if math.isfinite(f) else None
+                except:
+                    return None
             for t in sample_times:
-                s = float(sf[sf.index <= t].iloc[-1]) if len(sf[sf.index <= t]) > 0 else 1.0
-                survival_curve.append({"t": round(float(t), 1), "survival": round(s, 4)})
+                s_val = float(np.array(kmf.survival_function_at_times([t])).flat[0])
+                sf = safe_float(s_val)
+                if sf is not None:
+                    survival_curve.append({"t": t, "s": round(sf, 4)})
 
             rows.append(
                 {
                     "id": _uid(),
                     "company_id": company_id,
-                    "equipment_id": eq_id,
                     "median_survival": round(median, 2),
                     "ci_low": ci_low,
                     "ci_high": ci_high,
@@ -747,7 +759,7 @@ def run_all_ml(company_id: str, db: Client) -> dict:
         "status": str(results["status"]),
         "equipment_count": equipment_count,
         "duration_seconds": duration,
-        "module_counts": {k: v for k, v in results.items() if isinstance(v, int)},
+        "error_message": results.get("error"),
     }
 
     try:
