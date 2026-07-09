@@ -15,7 +15,8 @@ export default function AppLayout({ children, topbarRight }: AppLayoutProps) {
 
   return (
     <div className="flex min-h-screen bg-background">
-      {/* Desktop sidebar overlay (mobile) */}
+
+      {/* Mobile overlay */}
       {sidebarOpen && (
         <div
           className="fixed inset-0 z-20 bg-black/40 lg:hidden"
@@ -23,12 +24,17 @@ export default function AppLayout({ children, topbarRight }: AppLayoutProps) {
         />
       )}
 
-      {/* Sidebar — desktop only */}
-      <div className={`fixed left-0 top-0 h-screen z-30 transition-transform duration-200 ${sidebarOpen ? 'translate-x-0' : '-translate-x-full lg:translate-x-0'} lg:block ${!sidebarOpen ? 'pointer-events-none lg:pointer-events-auto' : ''}`}>
+      {/* Sidebar desktop — always visible */}
+      <div className="hidden lg:block fixed left-0 top-0 h-screen w-64 z-30">
         <Sidebar onClose={() => setSidebarOpen(false)} />
       </div>
 
-      {/* Main */}
+      {/* Sidebar mobile — drawer */}
+      <div className={`lg:hidden fixed left-0 top-0 h-screen w-64 z-30 transition-transform duration-200 ${sidebarOpen ? 'translate-x-0' : '-translate-x-full'}`}>
+        <Sidebar onClose={() => setSidebarOpen(false)} />
+      </div>
+
+      {/* Main content */}
       <main className="flex-1 min-h-screen lg:ml-64 pb-16 lg:pb-0">
         {/* Topbar */}
         <div className="sticky top-0 z-10 flex items-center justify-between px-4 py-3 bg-card border-b border-border">
@@ -56,7 +62,7 @@ export default function AppLayout({ children, topbarRight }: AppLayoutProps) {
         </div>
       </main>
 
-      {/* Bottom nav — mobile only */}
+      {/* Bottom nav mobile only */}
       <BottomNav />
     </div>
   )
