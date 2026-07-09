@@ -2,9 +2,14 @@
 
 import { useState } from 'react'
 import Sidebar from './sidebar'
-import { Menu, X } from 'lucide-react'
+import { Menu } from 'lucide-react'
 
-export default function AppLayout({ children }: { children: React.ReactNode }) {
+interface AppLayoutProps {
+  children: React.ReactNode
+  topbarRight?: React.ReactNode
+}
+
+export default function AppLayout({ children, topbarRight }: AppLayoutProps) {
   const [sidebarOpen, setSidebarOpen] = useState(false)
 
   return (
@@ -17,25 +22,28 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
         />
       )}
 
-      {/* Sidebar — hidden on mobile unless open */}
+      {/* Sidebar */}
       <div className={`fixed left-0 top-0 h-screen z-30 transition-transform duration-200 lg:translate-x-0 ${sidebarOpen ? 'translate-x-0' : '-translate-x-full'}`}>
         <Sidebar onClose={() => setSidebarOpen(false)} />
       </div>
 
-      {/* Main content */}
+      {/* Main */}
       <main className="flex-1 min-h-screen lg:ml-64">
-        {/* Mobile topbar */}
-        <div className="sticky top-0 z-10 flex items-center gap-3 px-4 py-3 bg-card border-b border-border lg:hidden">
+        {/* Topbar */}
+        <div className="sticky top-0 z-10 flex items-center justify-between px-4 py-3 bg-card border-b border-border">
           <button
             onClick={() => setSidebarOpen(true)}
-            className="p-2 rounded-lg hover:bg-muted"
+            className="p-2 rounded-lg hover:bg-muted lg:hidden"
           >
             <Menu className="h-5 w-5 text-foreground" />
           </button>
-          <span className="font-bold text-sm text-foreground">Integra</span>
+          <span className="font-bold text-sm text-foreground lg:hidden">Integra</span>
+          <div className="ml-auto flex items-center gap-2">
+            {topbarRight}
+          </div>
         </div>
 
-        <div className="p-4 lg:p-6 max-w-screen-2xl">
+        <div className="p-4 lg:p-6">
           {children}
         </div>
       </main>
