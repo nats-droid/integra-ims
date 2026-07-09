@@ -2,6 +2,7 @@
 
 import { useState } from 'react'
 import Sidebar from './sidebar'
+import BottomNav from './bottom-nav'
 import { Menu } from 'lucide-react'
 
 interface AppLayoutProps {
@@ -14,7 +15,7 @@ export default function AppLayout({ children, topbarRight }: AppLayoutProps) {
 
   return (
     <div className="flex min-h-screen bg-background">
-      {/* Mobile overlay */}
+      {/* Desktop sidebar overlay (mobile) */}
       {sidebarOpen && (
         <div
           className="fixed inset-0 z-20 bg-black/40 lg:hidden"
@@ -22,23 +23,30 @@ export default function AppLayout({ children, topbarRight }: AppLayoutProps) {
         />
       )}
 
-      {/* Sidebar */}
+      {/* Sidebar — desktop only */}
       <div className={`fixed left-0 top-0 h-screen z-30 transition-transform duration-200 lg:translate-x-0 ${sidebarOpen ? 'translate-x-0' : '-translate-x-full'}`}>
         <Sidebar onClose={() => setSidebarOpen(false)} />
       </div>
 
       {/* Main */}
-      <main className="flex-1 min-h-screen lg:ml-64">
+      <main className="flex-1 min-h-screen lg:ml-64 pb-16 lg:pb-0">
         {/* Topbar */}
         <div className="sticky top-0 z-10 flex items-center justify-between px-4 py-3 bg-card border-b border-border">
-          <button
-            onClick={() => setSidebarOpen(true)}
-            className="p-2 rounded-lg hover:bg-muted lg:hidden"
-          >
-            <Menu className="h-5 w-5 text-foreground" />
-          </button>
-          <span className="font-bold text-sm text-foreground lg:hidden">Integra</span>
-          <div className="ml-auto flex items-center gap-2">
+          <div className="flex items-center gap-3">
+            <button
+              onClick={() => setSidebarOpen(true)}
+              className="p-2 rounded-lg hover:bg-muted lg:hidden"
+            >
+              <Menu className="h-5 w-5 text-foreground" />
+            </button>
+            <div className="flex items-center gap-2 lg:hidden">
+              <div className="w-6 h-6 rounded-md bg-primary flex items-center justify-center">
+                <span className="text-white font-bold text-xs">IG</span>
+              </div>
+              <span className="font-bold text-sm text-foreground">Integra</span>
+            </div>
+          </div>
+          <div className="flex items-center gap-2">
             {topbarRight}
           </div>
         </div>
@@ -47,6 +55,9 @@ export default function AppLayout({ children, topbarRight }: AppLayoutProps) {
           {children}
         </div>
       </main>
+
+      {/* Bottom nav — mobile only */}
+      <BottomNav />
     </div>
   )
 }
