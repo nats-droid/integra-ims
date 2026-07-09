@@ -229,6 +229,7 @@ export default function SettingsPage() {
               >
                 <option value="gemini">Google Gemini</option>
                 <option value="openai">OpenAI</option>
+                <option value="openrouter">OpenRouter (Free)</option>
               </select>
             </div>
 

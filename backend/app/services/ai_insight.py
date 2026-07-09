@@ -233,6 +233,30 @@ def call_llm(prompt: str, provider: str, api_key: str) -> str:
         except (KeyError, IndexError):
             raise ValueError("llm_error")
 
+    elif provider == "openrouter":
+        url = "https://openrouter.ai/api/v1/chat/completions"
+        headers = {
+            "Content-Type": "application/json",
+            "Authorization": f"Bearer {api_key}",
+            "HTTP-Referer": "https://demo-integra.vercel.app",
+            "X-Title": "Integra IMS",
+        }
+        body = {
+            "model": "google/gemini-2.0-flash-exp:free",
+            "messages": [{"role": "user", "content": prompt}],
+            "max_tokens": 1000,
+        }
+        try:
+            r = httpx.post(url, headers=headers, json=body, timeout=60)
+            if r.status_code == 429:
+                raise ValueError("rate_limit")
+            if r.status_code != 200:
+                raise ValueError("llm_error")
+            data = r.json()
+            return data["choices"][0]["message"]["content"]
+        except httpx.TimeoutException:
+            raise ValueError("timeout")
+
     else:
         raise ValueError(f"llm_error: unsupported provider '{provider}'")
 

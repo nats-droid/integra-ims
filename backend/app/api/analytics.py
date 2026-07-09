@@ -208,7 +208,7 @@ async def save_ai_config(
                 content={"error": "provider and api_key are required"},
             )
 
-        if provider not in ("gemini", "openai"):
+        if provider not in ("gemini", "openai", "openrouter"):
             return JSONResponse(
                 status_code=400,
                 content={"error": "provider must be gemini or openai"},
