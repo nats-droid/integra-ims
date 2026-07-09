@@ -681,7 +681,7 @@ def run_survival(company_id: str, db: Client) -> int:
                 s_val = float(np.array(kmf.survival_function_at_times([t])).flat[0])
                 sf = safe_float(s_val)
                 if sf is not None:
-                    survival_curve.append({"t": t, "s": round(sf, 4)})
+                    survival_curve.append({"t": t, "survival": round(sf, 4)})
 
             rows.append(
                 {

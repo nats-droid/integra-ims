@@ -526,14 +526,14 @@ export default function MLAnalyticsPage() {
     const Plotly = (window as any).Plotly
     if (!Plotly) return
 
-    const eqIds = [...new Set(survivalData.map((s) => s.equipment_id))]
+    const eqIds = [...new Set(survivalData.map((s) => s.cml_point_id))]
     if (!selectedEquipment && eqIds.length) {
       setSelectedEquipment(eqIds[0])
       return
     }
 
     const row = survivalData.find(
-      (s) => s.equipment_id === selectedEquipment,
+      (s) => s.cml_point_id === selectedEquipment,
     )
     if (!row?.survival_curve?.length) return
 
@@ -703,7 +703,7 @@ export default function MLAnalyticsPage() {
                 ? regressionData.map((r) => r.equipment_id)
                 : activeTab === 'weibull'
                   ? weibullData.map((w) => w.equipment_id)
-                  : survivalData.map((s) => s.equipment_id),
+                  : survivalData.map((s) => s.cml_point_id),
             )].map((eqId) => (
               <option key={eqId} value={eqId}>
                 {equipmentTags().get(eqId) || eqId.slice(0, 8)}
