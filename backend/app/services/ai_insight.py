@@ -173,7 +173,7 @@ def call_llm(prompt: str, provider: str, api_key: str) -> str:
     if provider == "gemini":
         url = (
             "https://generativelanguage.googleapis.com/v1beta/"
-            "models/gemini-1.5-flash:generateContent"
+            "models/gemini-2.0-flash:generateContent"
         )
         payload = {
             "contents": [{"parts": [{"text": prompt}]}],
