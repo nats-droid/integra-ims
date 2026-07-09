@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 
-const BACKEND_URL = process.env.BACKEND_URL || 'https://knowing-penny-format-season.trycloudflare.com'
+const BACKEND_URL = process.env.BACKEND_URL || 'http://43.129.51.179:8000'
 
 async function handler(
   req: NextRequest,
