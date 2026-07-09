@@ -163,7 +163,7 @@ export default function MLAnalyticsPage() {
       const { data: profile } = await (supabase
         .from('app_users')
         .select('company_id, role') as any)
-        .eq('id', session.user.id)
+        .eq('auth_user_id', session.user.id)
         .single()
 
       if (profile) {
@@ -323,7 +323,10 @@ export default function MLAnalyticsPage() {
   // -----------------------------------------------------------------------
 
   const runML = async () => {
-    if (!companyId) return
+    if (!companyId) {
+      toast.error('Profile not loaded yet. Please wait and try again.')
+      return
+    }
     setRunning(true)
     toast.info('Running ML pipeline...')
 
