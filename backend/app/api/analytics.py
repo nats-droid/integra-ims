@@ -427,3 +427,118 @@ async def mark_notification_read(
         raise HTTPException(status_code=404, detail="Notification not found")
 
     return {"success": True}
+
+# ── ML Analytics Endpoints ────────────────────────────────────────────────────
+
+@router.post("/ml/run/{company_id}")
+async def run_ml(
+    company_id: str,
+    user: dict = Depends(verify_jwt),
+):
+    """Trigger full ML pipeline for a company."""
+    try:
+        from app.services import ml_analytics
+        db = get_db()
+        result = ml_analytics.run_all_ml(company_id, db)
+        return result
+    except Exception as e:
+        logger.error(f"run_ml error: {e}")
+        return JSONResponse(status_code=500, content={"error": str(e)})
+
+@router.get("/ml/status/{company_id}")
+async def get_ml_status(
+    company_id: str,
+    user: dict = Depends(verify_jwt),
+):
+    """Get last ML run status for a company."""
+    try:
+        db = get_db()
+        log = db.table("ml_run_log")\
+            .select("*")\
+            .eq("company_id", company_id)\
+            .order("started_at", desc=True)\
+            .limit(1)\
+            .execute()
+        return {"last_run": log.data[0] if log.data else None}
+    except Exception as e:
+        logger.error(f"get_ml_status error: {e}")
+        return JSONResponse(status_code=500, content={"error": str(e)})
+
+@router.get("/ml/risk/{company_id}")
+async def get_ml_risk(
+    company_id: str,
+    user: dict = Depends(verify_jwt),
+):
+    db = get_db()
+    try:
+        rows = db.table("ml_risk_predictions")\
+            .select("*, equipment(tag, type, area_id)")\
+            .eq("company_id", company_id)\
+            .order("risk_score", desc=True)\
+            .execute()
+        return {"data": rows.data}
+    except Exception as e:
+        return JSONResponse(status_code=500, content={"error": str(e)})
+
+@router.get("/ml/clusters/{company_id}")
+async def get_ml_clusters(
+    company_id: str,
+    user: dict = Depends(verify_jwt),
+):
+    db = get_db()
+    try:
+        rows = db.table("ml_clusters")\
+            .select("*, equipment(tag, type)")\
+            .eq("company_id", company_id)\
+            .execute()
+        return {"data": rows.data}
+    except Exception as e:
+        return JSONResponse(status_code=500, content={"error": str(e)})
+
+@router.get("/ml/regression/{company_id}")
+async def get_ml_regression(
+    company_id: str,
+    user: dict = Depends(verify_jwt),
+):
+    db = get_db()
+    try:
+        rows = db.table("ml_regression_trends")\
+            .select("*, cml_points(location_label, equipment_id)")\
+            .eq("company_id", company_id)\
+            .limit(500)\
+            .execute()
+        return {"data": rows.data}
+    except Exception as e:
+        return JSONResponse(status_code=500, content={"error": str(e)})
+
+@router.get("/ml/weibull/{company_id}")
+async def get_ml_weibull(
+    company_id: str,
+    user: dict = Depends(verify_jwt),
+):
+    db = get_db()
+    try:
+        rows = db.table("ml_weibull_results")\
+            .select("*, cml_points(location_label, equipment_id)")\
+            .eq("company_id", company_id)\
+            .limit(500)\
+            .execute()
+        return {"data": rows.data}
+    except Exception as e:
+        return JSONResponse(status_code=500, content={"error": str(e)})
+
+@router.get("/ml/survival/{company_id}")
+async def get_ml_survival(
+    company_id: str,
+    user: dict = Depends(verify_jwt),
+):
+    db = get_db()
+    try:
+        rows = db.table("ml_survival_results")\
+            .select("*, cml_points(location_label, equipment_id)")\
+            .eq("company_id", company_id)\
+            .limit(500)\
+            .execute()
+        return {"data": rows.data}
+    except Exception as e:
+        return JSONResponse(status_code=500, content={"error": str(e)})

@@ -5,7 +5,7 @@ import { usePathname } from 'next/navigation'
 import {
   LayoutDashboard, Wrench, ClipboardList, CalendarCheck,
   FlaskConical, FileText, Settings,
-  Activity, Gauge, Pipette, Layers,
+  Activity, Gauge, Pipette, Layers, BarChart3,
 } from 'lucide-react'
 import { cn } from '@/utils/cn'
 
@@ -26,6 +26,7 @@ const NAV_ITEMS = [
   { href: '/campaigns', label: 'Campaigns', icon: FlaskConical },
   { href: '/dm-screener', label: 'DM Screener', icon: Gauge },
   { href: '/ai-insight', label: 'AI Insight', icon: FileText },
+  { href: '/ml-analytics', label: 'ML Analytics', icon: BarChart3 },
   { href: '/reports', label: 'Reports', icon: FileText },
   { href: '/settings', label: 'Settings', icon: Settings },
 ]
