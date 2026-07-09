@@ -613,7 +613,7 @@ export default function MLAnalyticsPage() {
   return (
     <AppLayout>
       {/* Header */}
-      <div className="flex items-center justify-between mb-6">
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <div className="flex items-center gap-3">
           <Brain className="h-6 w-6 text-blue-600" />
           <h1 className="text-2xl font-bold text-gray-900">ML Analytics</h1>
