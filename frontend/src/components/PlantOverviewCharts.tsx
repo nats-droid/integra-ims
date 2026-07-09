@@ -38,7 +38,7 @@ export default function PlantOverviewCharts({ crData, dmData, fluidData, rlData 
       if (crRef.current && crData.length) {
         P.newPlot(crRef.current, [{
           type: 'bar', x: crData.map(d => d.area), y: crData.map(d => d.avg_cr),
-          marker: { color: crData.map(d => d.avg_cr > 0.5 ? '#E60012' : d.avg_cr > 0.2 ? '#F0AD4E' : '#6AB023') },
+          marker: { color: crData.map(d => d.avg_cr > 0.5 ? '#EF4444' : d.avg_cr > 0.2 ? '#F59E0B' : '#22C55E') },
           text: crData.map(d => d.avg_cr.toFixed(3)), textposition: 'outside',
         }], { ...layout('Average Corrosion Rate by Area (mm/yr)'), xaxis: { tickangle: -30 } }, { responsive: true, displayModeBar: false })
       }
@@ -47,7 +47,7 @@ export default function PlantOverviewCharts({ crData, dmData, fluidData, rlData 
       if (dmRef.current && dmData.length) {
         P.newPlot(dmRef.current, [{
           type: 'bar', x: dmData.map(d => d.area), y: dmData.map(d => d.dm_count),
-          marker: { color: '#1B3A6B' },
+          marker: { color: '#4F6EF7' },
           text: dmData.map(d => d.dm_count), textposition: 'outside',
         }], { ...layout('Active Damage Mechanisms by Area'), xaxis: { tickangle: -30 } }, { responsive: true, displayModeBar: false })
       }
@@ -66,7 +66,7 @@ export default function PlantOverviewCharts({ crData, dmData, fluidData, rlData 
       if (rlRef.current && rlData.length) {
         P.newPlot(rlRef.current, [{
           type: 'bar', x: rlData.map(d => d.area), y: rlData.map(d => d.avg_rl),
-          marker: { color: rlData.map(d => d.avg_rl < 2 ? '#E60012' : d.avg_rl < 5 ? '#F0AD4E' : '#6AB023') },
+          marker: { color: rlData.map(d => d.avg_rl < 2 ? '#EF4444' : d.avg_rl < 5 ? '#F59E0B' : '#22C55E') },
           text: rlData.map(d => d.avg_rl.toFixed(1) + ' yr'), textposition: 'outside',
         }], { ...layout('Average Remaining Life by Area (years)'), xaxis: { tickangle: -30 } }, { responsive: true, displayModeBar: false })
       }

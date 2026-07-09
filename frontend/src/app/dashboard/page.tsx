@@ -1047,12 +1047,12 @@ export default function DashboardPage() {
 
   /* ── Color mapping ─────────────────────────────────────── */
 
-  const colorMap: Record<string, { bg: string; text: string; border: string; iconBg: string }> = {
-    blue:       { bg: 'bg-blue-50 dark:bg-blue-950/30',   text: 'text-blue-700 dark:text-blue-300',   border: 'border-blue-200 dark:border-blue-800',   iconBg: 'bg-blue-100 dark:bg-blue-900/40' },
-    amber:      { bg: 'bg-amber-50 dark:bg-amber-950/30',  text: 'text-amber-700 dark:text-amber-300',  border: 'border-amber-200 dark:border-amber-800',  iconBg: 'bg-amber-100 dark:bg-amber-900/40' },
-    orange:     { bg: 'bg-orange-50 dark:bg-orange-950/30', text: 'text-orange-700 dark:text-orange-300', border: 'border-orange-200 dark:border-orange-800', iconBg: 'bg-orange-100 dark:bg-orange-900/40' },
-    red:        { bg: 'bg-red-50 dark:bg-red-950/30',     text: 'text-red-700 dark:text-red-300',     border: 'border-red-200 dark:border-red-800',     iconBg: 'bg-red-100 dark:bg-red-900/40' },
-    destructive:{ bg: 'bg-red-50 dark:bg-red-950/30',     text: 'text-red-700 dark:text-red-300',     border: 'border-red-200 dark:border-red-800',     iconBg: 'bg-red-100 dark:bg-red-900/40' },
+  const colorMap: Record<string, { accent: string; iconBg: string; iconColor: string; valueColor: string }> = {
+    blue:        { accent: '#4F6EF7', iconBg: '#EEF2FF', iconColor: '#4F6EF7', valueColor: '#4F6EF7' },
+    amber:       { accent: '#F59E0B', iconBg: '#FFFBEB', iconColor: '#D97706', valueColor: '#D97706' },
+    orange:      { accent: '#F97316', iconBg: '#FFF7ED', iconColor: '#EA580C', valueColor: '#EA580C' },
+    red:         { accent: '#EF4444', iconBg: '#FEF2F2', iconColor: '#DC2626', valueColor: '#DC2626' },
+    destructive: { accent: '#EF4444', iconBg: '#FEF2F2', iconColor: '#DC2626', valueColor: '#DC2626' },
   }
 
   /* ── Render ─────────────────────────────────────────────── */
@@ -1154,17 +1154,15 @@ export default function DashboardPage() {
                 return (
                   <div
                     key={kpi.label}
-                    className={cn(
-                      'rounded-xl border-l-4 border border-border bg-card p-5 shadow-sm hover:shadow-md transition-shadow',
-                      c.bg, c.border,
-                    )}
+                    className="rounded-xl border border-border bg-card p-5 shadow-sm hover:shadow-md transition-shadow"
+                    style={{ borderLeftWidth: '4px', borderLeftColor: c.accent }}
                   >
                     <div className="flex items-start justify-between mb-3">
-                      <div className={cn('rounded-lg p-2', c.iconBg)}>
-                        <span className={c.text}>{kpi.icon}</span>
+                      <div className="rounded-lg p-2" style={{ background: c.iconBg }}>
+                        <span style={{ color: c.iconColor }}>{kpi.icon}</span>
                       </div>
                     </div>
-                    <p className={cn('text-3xl font-bold tabular-nums', c.text)}>
+                    <p className="text-3xl font-bold tabular-nums" style={{ color: c.valueColor }}>
                       {kpi.value}
                     </p>
                     <p className="text-sm font-medium mt-1">{kpi.label}</p>
