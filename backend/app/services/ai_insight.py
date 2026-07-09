@@ -242,7 +242,7 @@ def call_llm(prompt: str, provider: str, api_key: str) -> str:
             "X-Title": "Integra IMS",
         }
         body = {
-            "model": "deepseek/deepseek-v4-flash",
+            "model": "mistralai/mistral-nemo",
             "messages": [{"role": "user", "content": prompt}],
             "max_tokens": 1000,
         }
