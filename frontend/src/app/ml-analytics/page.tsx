@@ -627,8 +627,10 @@ export default function MLAnalyticsPage() {
             </span>
           )}
         </div>
+      </div>
 
-        {canRun && (
+      {canRun && (
+        <div className="flex justify-start">
           <button
             onClick={runML}
             disabled={running}
@@ -641,8 +643,8 @@ export default function MLAnalyticsPage() {
             )}
             {running ? 'Running...' : 'Run ML Pipeline'}
           </button>
-        )}
-      </div>
+        </div>
+      )}
 
       {/* Warning if no data */}
       {!mlStatus && !running && (
