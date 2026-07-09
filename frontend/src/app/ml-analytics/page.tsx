@@ -629,7 +629,7 @@ export default function MLAnalyticsPage() {
         </div>
       </div>
 
-      {canRun && (
+      {(
         <div className="flex justify-start">
           <button
             onClick={runML}
