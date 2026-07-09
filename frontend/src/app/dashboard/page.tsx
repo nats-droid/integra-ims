@@ -1155,7 +1155,7 @@ export default function DashboardPage() {
                   <div
                     key={kpi.label}
                     className={cn(
-                      'rounded-xl border p-5 transition-colors',
+                      'rounded-xl border-l-4 border border-border bg-card p-5 shadow-sm hover:shadow-md transition-shadow',
                       c.bg, c.border,
                     )}
                   >

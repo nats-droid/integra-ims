@@ -24,7 +24,7 @@ export default function AppLayout({ children, topbarRight }: AppLayoutProps) {
       )}
 
       {/* Sidebar — desktop only */}
-      <div className={`fixed left-0 top-0 h-screen z-30 transition-transform duration-200 lg:translate-x-0 ${sidebarOpen ? 'translate-x-0' : '-translate-x-full'}`}>
+      <div className={`fixed left-0 top-0 h-screen z-30 transition-transform duration-200 ${sidebarOpen ? 'translate-x-0' : '-translate-x-full lg:translate-x-0'} lg:block ${!sidebarOpen ? 'pointer-events-none lg:pointer-events-auto' : ''}`}>
         <Sidebar onClose={() => setSidebarOpen(false)} />
       </div>
 
