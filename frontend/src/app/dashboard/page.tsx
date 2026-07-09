@@ -1179,14 +1179,12 @@ export default function DashboardPage() {
           {!loading && (
             <div className="mt-8">
               <div className="rounded-xl border border-border bg-card p-6">
-                <h2 className="text-sm font-medium mb-1">Due Date Distribution</h2>
-                <p className="text-xs text-muted-foreground mb-4">
-                  Equipment count by due date zone
-                </p>
+                <h2 className="text-base font-semibold text-foreground mb-1">Due Date Distribution</h2>
+                <p className="text-xs text-muted-foreground mb-4">Equipment count by due date zone</p>
                 <div className="h-64">
                   <ResponsiveContainer width="100%" height="100%">
                     <BarChart data={chartData} margin={{ top: 8, right: 16, left: 0, bottom: 8 }}>
-                      <CartesianGrid strokeDasharray="3 3" className="stroke-border/50" />
+                      <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" vertical={false} />
                       <XAxis
                         dataKey="name"
                         tick={{ fontSize: 12 }}
@@ -1199,12 +1197,13 @@ export default function DashboardPage() {
                       />
                       <Tooltip
                         contentStyle={{
-                          fontSize: 12,
-                          borderRadius: 8,
-                          border: '1px solid var(--border)',
-                          background: 'var(--card)',
+                          background: '#ffffff',
+                          border: '1px solid #e2e8f0',
+                          borderRadius: '12px',
+                          boxShadow: '0 4px 6px -1px rgb(0 0 0 / 0.1)',
+                          fontSize: '12px',
                         }}
-                        formatter={(value: any) => [`${value} equipment`, '']}
+                        cursor={{ fill: 'rgba(79, 110, 247, 0.05)' }}
                       />
                       <Bar dataKey="value" radius={[6, 6, 0, 0]} maxBarSize={80}>
                         {chartData.map((entry, index) => (
