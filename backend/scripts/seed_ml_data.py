@@ -4,6 +4,7 @@ Generates 1000 piping, 100 vessel, 50 heat exchanger.
 ~10% equipment get simulated repairs (thickness resets to 90% nominal).
 """
 
+import os
 import random
 import uuid
 from supabase import create_client
@@ -12,10 +13,9 @@ from supabase import create_client
 # Constants
 # ---------------------------------------------------------------------------
 
-SUPABASE_URL = "https://enppairwpjtmrgrvzxio.supabase.co"
-SUPABASE_KEY = "sb_secret_W5llKdtM4NXPWFVrXXdiBQ_0lLMY_PN"
-
-COMPANY_ID = "c704d7e6-07fb-48a2-9152-564434d8653f"
+SUPABASE_URL = os.getenv("SUPABASE_URL", "")
+SUPABASE_KEY = os.getenv("SUPABASE_SERVICE_KEY", "")
+COMPANY_ID = os.getenv("SEED_COMPANY_ID", "c704d7e6-07fb-48a2-9152-564434d8653f")
 
 AREA_IDS = [
     "d3526569-b949-480c-9a9a-c7c1998ab9ba",  # Olefin Complex
