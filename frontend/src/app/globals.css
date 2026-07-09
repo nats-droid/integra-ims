@@ -5,48 +5,99 @@
   --color-foreground: hsl(222 47% 11%);
   --color-card: hsl(0 0% 100%);
   --color-card-foreground: hsl(222 47% 11%);
-  --color-primary: hsl(222 29% 33%);
-  --color-primary-foreground: hsl(210 40% 98%);
+  --color-primary: hsl(231 89% 64%);
+  --color-primary-foreground: hsl(0 0% 100%);
+  --color-primary-light: hsl(231 89% 97%);
   --color-secondary: hsl(210 40% 96%);
   --color-secondary-foreground: hsl(222 47% 11%);
-  --color-muted: hsl(210 38% 95%);
+  --color-muted: hsl(210 40% 96%);
   --color-muted-foreground: hsl(215 16% 47%);
-  --color-accent: hsl(222 28% 92%);
-  --color-accent-foreground: hsl(222 29% 33%);
+  --color-accent: hsl(231 89% 97%);
+  --color-accent-foreground: hsl(231 89% 64%);
   --color-destructive: hsl(0 84% 60%);
-  --color-destructive-foreground: hsl(210 40% 98%);
+  --color-destructive-foreground: hsl(0 0% 100%);
   --color-border: hsl(214 32% 91%);
   --color-input: hsl(214 32% 91%);
-  --color-ring: hsl(222 29% 33%);
-  --radius: 0.5rem;
+  --color-ring: hsl(231 89% 64%);
+  --color-success: hsl(142 76% 36%);
+  --color-warning: hsl(38 92% 50%);
+  --color-sidebar-bg: hsl(0 0% 100%);
+  --color-sidebar-border: hsl(214 32% 91%);
+  --color-sidebar-active-bg: hsl(231 89% 97%);
+  --color-sidebar-active-text: hsl(231 89% 64%);
+  --color-sidebar-text: hsl(215 16% 47%);
+  --color-sidebar-text-hover: hsl(222 47% 11%);
+  --radius: 0.75rem;
+  --font-sans: var(--font-geist-sans), system-ui, sans-serif;
+  --font-mono: var(--font-geist-mono), monospace;
 }
 
 .dark {
-  --color-background: hsl(222 47% 11%);
+  --color-background: hsl(222 47% 8%);
   --color-foreground: hsl(210 40% 98%);
   --color-card: hsl(222 47% 11%);
-  --color-card-foreground: hsl(210 40% 98%);
-  --color-primary: hsl(222 29% 55%);
-  --color-primary-foreground: hsl(222 47% 11%);
-  --color-secondary: hsl(217 33% 17%);
-  --color-secondary-foreground: hsl(210 40% 98%);
+  --color-primary: hsl(231 89% 70%);
+  --color-border: hsl(217 33% 17%);
   --color-muted: hsl(217 33% 17%);
   --color-muted-foreground: hsl(215 20% 65%);
-  --color-accent: hsl(222 29% 22%);
-  --color-accent-foreground: hsl(222 29% 80%);
-  --color-destructive: hsl(0 63% 31%);
-  --color-destructive-foreground: hsl(210 40% 98%);
-  --color-border: hsl(217 33% 17%);
-  --color-input: hsl(217 33% 17%);
-  --color-ring: hsl(222 29% 55%);
+  --color-sidebar-bg: hsl(222 47% 9%);
+  --color-sidebar-border: hsl(217 33% 17%);
+  --color-sidebar-active-bg: hsl(231 89% 20%);
+  --color-sidebar-active-text: hsl(231 89% 75%);
+  --color-sidebar-text: hsl(215 20% 65%);
 }
 
 @layer base {
-  * {
-    @apply border-border;
+  * { @apply border-border box-border; }
+  body { @apply bg-background text-foreground antialiased; }
+  h1 { @apply text-2xl font-bold tracking-tight; }
+  h2 { @apply text-xl font-semibold; }
+  h3 { @apply text-base font-semibold; }
+}
+
+@layer utilities {
+  .sidebar-item {
+    @apply flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-all duration-150 cursor-pointer;
+    color: var(--color-sidebar-text);
   }
-  body {
-    @apply bg-background text-foreground antialiased;
-    font-feature-settings: "rlig" 1, "calt" 1;
+  .sidebar-item:hover {
+    background: var(--color-sidebar-active-bg);
+    color: var(--color-sidebar-text-hover);
+  }
+  .sidebar-item.active {
+    background: var(--color-sidebar-active-bg);
+    color: var(--color-sidebar-active-text);
+    border-left: 3px solid var(--color-sidebar-active-text);
+    padding-left: calc(0.75rem - 3px);
+  }
+  .sidebar-group-label {
+    @apply text-xs font-semibold uppercase tracking-widest px-3 py-2;
+    color: var(--color-muted-foreground);
+  }
+  .kpi-card {
+    @apply bg-card rounded-xl border border-border p-5 shadow-sm hover:shadow-md transition-shadow;
+  }
+  .page-header {
+    @apply mb-6;
+  }
+  .page-title {
+    @apply text-2xl font-bold text-foreground;
+  }
+  .page-subtitle {
+    @apply text-sm text-muted-foreground mt-1;
+  }
+  .tab-bar {
+    @apply flex gap-1 border-b border-border mb-6;
+  }
+  .tab-item {
+    @apply flex items-center gap-2 px-4 py-2.5 text-sm font-medium border-b-2 border-transparent transition-all cursor-pointer;
+    color: var(--color-muted-foreground);
+  }
+  .tab-item:hover {
+    color: var(--color-foreground);
+  }
+  .tab-item.active {
+    color: var(--color-primary);
+    border-bottom-color: var(--color-primary);
   }
 }

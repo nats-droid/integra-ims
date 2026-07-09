@@ -2,109 +2,150 @@
 
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
+import { useEffect, useState } from 'react'
+import { createClient } from '@/lib/supabase/client'
 import {
   LayoutDashboard, Wrench, ClipboardList, CalendarCheck,
-  FlaskConical, FileText, Settings,
-  Activity, Gauge, Pipette, Layers, BarChart3,
+  FlaskConical, FileText, Settings, Activity, Gauge,
+  Pipette, Layers, BarChart3, Brain, ChevronDown,
+  ChevronRight, LogOut, User, MapPin, Shield,
 } from 'lucide-react'
 import { cn } from '@/utils/cn'
 
-const NAV_ITEMS = [
-  { href: '/dashboard', label: 'Dashboard', icon: LayoutDashboard },
+const NAV = [
+  { href: '/dashboard', label: 'Dashboard', icon: LayoutDashboard, color: 'text-indigo-500' },
   {
-    label: 'Master Data',
-    icon: Layers,
+    label: 'Master Data', icon: Layers, color: 'text-violet-500',
     children: [
-      { href: '/equipment', label: 'Equipment', icon: Wrench },
-      { href: '/plant-areas', label: 'Plant Areas', icon: Layers },
-      { href: '/circuits', label: 'Circuits', icon: Activity },
-      { href: '/cml-points', label: 'CML Points', icon: Pipette },
+      { href: '/equipment', label: 'Equipment', icon: Wrench, color: 'text-violet-400' },
+      { href: '/plant-areas', label: 'Plant Areas', icon: MapPin, color: 'text-violet-400' },
+      { href: '/circuits', label: 'Circuits', icon: Activity, color: 'text-violet-400' },
+      { href: '/cml-points', label: 'CML Points', icon: Pipette, color: 'text-violet-400' },
     ],
   },
-  { href: '/inspections', label: 'Inspections', icon: ClipboardList },
-  { href: '/plans', label: 'Inspection Plans', icon: CalendarCheck },
-  { href: '/campaigns', label: 'Campaigns', icon: FlaskConical },
-  { href: '/dm-screener', label: 'DM Screener', icon: Gauge },
-  { href: '/ai-insight', label: 'AI Insight', icon: FileText },
-  { href: '/ml-analytics', label: 'ML Analytics', icon: BarChart3 },
-  { href: '/reports', label: 'Reports', icon: FileText },
-  { href: '/settings', label: 'Settings', icon: Settings },
+  { href: '/inspections', label: 'Inspections', icon: ClipboardList, color: 'text-sky-500' },
+  { href: '/plans', label: 'Inspection Plans', icon: CalendarCheck, color: 'text-cyan-500' },
+  { href: '/campaigns', label: 'Campaigns', icon: FlaskConical, color: 'text-teal-500' },
+  { href: '/dm-screener', label: 'DM Screener', icon: Shield, color: 'text-amber-500' },
+  { href: '/ai-insight', label: 'AI Insight', icon: Brain, color: 'text-purple-500' },
+  { href: '/ml-analytics', label: 'ML Analytics', icon: BarChart3, color: 'text-blue-500' },
+  { href: '/reports', label: 'Reports', icon: FileText, color: 'text-slate-500' },
+  { href: '/settings', label: 'Settings', icon: Settings, color: 'text-slate-500' },
 ]
 
-export default function Sidebar() {
+export default function Sidebar({ onClose }: { onClose?: () => void }) {
   const pathname = usePathname()
+  const [masterOpen, setMasterOpen] = useState(false)
+  const [user, setUser] = useState<{ name: string; role: string } | null>(null)
+  const supabase = createClient()
+
+  useEffect(() => {
+    const masterPaths = ['/equipment', '/plant-areas', '/circuits', '/cml-points']
+    if (masterPaths.some(p => pathname.startsWith(p))) setMasterOpen(true)
+  }, [pathname])
+
+  useEffect(() => {
+    async function loadUser() {
+      const { data: { session } } = await supabase.auth.getSession()
+      if (!session) return
+      const { data: profile } = await supabase
+        .from('app_users')
+        .select('full_name, role')
+        .eq('auth_user_id', session.user.id)
+        .single()
+      if (profile) setUser({ name: (profile as any).full_name, role: (profile as any).role })
+    }
+    loadUser()
+  }, [supabase])
+
+  const isActive = (href: string) => pathname === href || pathname.startsWith(href + '/')
 
   return (
-    <aside className="fixed left-0 top-0 z-40 h-screen w-64 border-r border-border bg-white dark:bg-gray-950">
-      {/* Logo — clean, minimal */}
-      <div className="flex h-14 items-center gap-2.5 px-6 border-b border-border/50">
-        <div className="flex h-7 w-7 items-center justify-center rounded-md bg-primary text-xs font-semibold text-primary-foreground tracking-tight">
-          IG
+    <aside
+      className="fixed left-0 top-0 h-screen w-64 flex flex-col z-30 border-r"
+      style={{ background: 'var(--color-sidebar-bg)', borderColor: 'var(--color-sidebar-border)' }}
+    >
+      {/* Brand */}
+      <div className="px-5 py-5 border-b" style={{ borderColor: 'var(--color-sidebar-border)' }}>
+        <div className="flex items-center gap-3">
+          <div className="w-8 h-8 rounded-lg bg-primary flex items-center justify-center">
+            <span className="text-white font-bold text-sm">IG</span>
+          </div>
+          <div>
+            <p className="font-bold text-sm text-foreground">Integra</p>
+            <p className="text-xs" style={{ color: 'var(--color-muted-foreground)' }}>Asset Integrity</p>
+          </div>
         </div>
-        <span className="text-sm font-semibold tracking-tight">Integra</span>
       </div>
 
-      {/* Navigation — lots of whitespace, no heavy borders */}
-      <nav className="flex flex-col gap-0.5 p-4 overflow-y-auto h-[calc(100vh-3.5rem)]">
-        {NAV_ITEMS.map((item) => {
-          if ('children' in item && item.children) {
-            const isActive = item.children.some((c) => pathname.startsWith(c.href))
+      {/* Nav */}
+      <nav className="flex-1 overflow-y-auto px-3 py-4 space-y-0.5">
+        {NAV.map((item) => {
+          if ('children' in item) {
+            const childActive = item.children!.some(c => isActive(c.href))
+            const open = masterOpen || childActive
             return (
               <div key={item.label}>
-                <div
+                <button
+                  onClick={() => setMasterOpen(o => !o)}
                   className={cn(
-                    'flex items-center gap-2.5 rounded-md px-3 py-2 text-xs font-medium transition-colors',
-                    isActive
-                      ? 'text-primary'
-                      : 'text-muted-foreground hover:text-foreground'
+                    'sidebar-item w-full',
+                    childActive && 'active'
                   )}
                 >
-                  <item.icon className="h-4 w-4" />
-                  {item.label}
-                </div>
-                <div className="ml-3 mt-0.5 flex flex-col gap-0.5 border-l border-border/40 pl-3">
-                  {item.children.map((child) => {
-                    const active = pathname === child.href || pathname.startsWith(child.href + '/')
-                    return (
-                      <Link
-                        key={child.href}
-                        href={child.href}
-                        className={cn(
-                          'flex items-center gap-2.5 rounded-md px-3 py-1.5 text-xs transition-colors',
-                          active
-                            ? 'text-primary font-medium'
-                            : 'text-muted-foreground hover:text-foreground'
-                        )}
+                  <item.icon className={cn('h-4 w-4 flex-shrink-0', item.color)} />
+                  <span className="flex-1 text-left">{item.label}</span>
+                  {open ? <ChevronDown className="h-3.5 w-3.5" /> : <ChevronRight className="h-3.5 w-3.5" />}
+                </button>
+                {open && (
+                  <div className="ml-4 mt-0.5 space-y-0.5 border-l pl-3" style={{ borderColor: 'var(--color-border)' }}>
+                    {item.children!.map(child => (
+                      <Link key={child.href} href={child.href}
+                        onClick={() => onClose?.()}
+                        className={cn('sidebar-item text-xs', isActive(child.href) && 'active')}
                       >
-                        {active && <span className="absolute left-0 h-4 w-0.5 rounded-r bg-primary" />}
-                        <child.icon className="h-3.5 w-3.5" />
+                        <child.icon className={cn('h-3.5 w-3.5 flex-shrink-0', child.color)} />
                         {child.label}
                       </Link>
-                    )
-                  })}
-                </div>
+                    ))}
+                  </div>
+                )}
               </div>
             )
           }
-          const active = pathname === item.href || pathname.startsWith(item.href + '/')
           return (
-            <Link
-              key={item.href}
-              href={item.href}
-              className={cn(
-                'flex items-center gap-2.5 rounded-md px-3 py-2 text-xs font-medium transition-colors',
-                active
-                  ? 'text-primary'
-                  : 'text-muted-foreground hover:text-foreground'
-              )}
+            <Link key={item.href} href={item.href}
+              onClick={() => onClose?.()}
+              className={cn('sidebar-item', isActive(item.href) && 'active')}
             >
-              {active && <span className="absolute -ml-3 h-4 w-0.5 rounded-r bg-primary" />}
-              <item.icon className="h-4 w-4" />
+              <item.icon className={cn('h-4 w-4 flex-shrink-0', item.color)} />
               {item.label}
             </Link>
           )
         })}
       </nav>
+
+      {/* User */}
+      {user && (
+        <div className="px-4 py-4 border-t" style={{ borderColor: 'var(--color-sidebar-border)' }}>
+          <div className="flex items-center gap-3 mb-3">
+            <div className="w-8 h-8 rounded-full bg-primary/10 flex items-center justify-center">
+              <User className="h-4 w-4 text-primary" />
+            </div>
+            <div className="flex-1 min-w-0">
+              <p className="text-sm font-medium text-foreground truncate">{user.name}</p>
+              <p className="text-xs capitalize" style={{ color: 'var(--color-muted-foreground)' }}>{user.role}</p>
+            </div>
+          </div>
+          <button
+            onClick={() => { onClose?.(); createClient().auth.signOut().then(() => window.location.href = '/auth/login') }}
+            className="sidebar-item w-full text-xs"
+          >
+            <LogOut className="h-3.5 w-3.5 text-red-400" />
+            Sign out
+          </button>
+        </div>
+      )}
     </aside>
   )
 }
