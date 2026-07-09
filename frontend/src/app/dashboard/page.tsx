@@ -1092,9 +1092,9 @@ export default function DashboardPage() {
       {activeTab === 'overview' && (
         <>
           {/* Filter Bar */}
-          <div className="flex flex-wrap items-center gap-3 mb-6">
+          <div className="flex flex-col sm:flex-row sm:flex-wrap sm:items-center gap-3 mb-6">
             {/* Plant Area */}
-            <div className="relative min-w-[180px]">
+            <div className="relative min-w-0 w-full sm:min-w-[180px] sm:w-auto">
               <select
                 value={filters.plantArea}
                 onChange={(e) => setFilters(prev => ({ ...prev, plantArea: e.target.value }))}
@@ -1106,7 +1106,7 @@ export default function DashboardPage() {
             </div>
 
             {/* Fluid Service */}
-            <div className="relative min-w-[180px]">
+            <div className="relative min-w-0 w-full sm:min-w-[180px] sm:w-auto">
               <select
                 value={filters.fluidService}
                 onChange={(e) => setFilters(prev => ({ ...prev, fluidService: e.target.value }))}
@@ -1118,7 +1118,7 @@ export default function DashboardPage() {
             </div>
 
             {/* Risk Category */}
-            <div className="relative min-w-[180px]">
+            <div className="relative min-w-0 w-full sm:min-w-[180px] sm:w-auto">
               <select
                 value={filters.riskCategory}
                 onChange={(e) => setFilters(prev => ({ ...prev, riskCategory: e.target.value }))}
@@ -1142,13 +1142,13 @@ export default function DashboardPage() {
 
           {/* KPI Cards */}
           {loading ? (
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
               {[1, 2, 3, 4, 5, 6].map(i => (
                 <div key={i} className="h-32 bg-card border border-border rounded-xl animate-pulse" />
               ))}
             </div>
           ) : (
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
               {kpis.map((kpi) => {
                 const c = colorMap[kpi.color] || colorMap.blue
                 return (
@@ -1399,7 +1399,7 @@ export default function DashboardPage() {
               </p>
             </div>
           ) : workloadLoading ? (
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
               {[1, 2, 3].map(i => (
                 <div key={i} className="h-48 bg-card border border-border rounded-xl animate-pulse" />
               ))}
@@ -1417,7 +1417,7 @@ export default function DashboardPage() {
               </p>
             </div>
           ) : (
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
               {workload.map((insp) => (
                 <div
                   key={insp.id}
