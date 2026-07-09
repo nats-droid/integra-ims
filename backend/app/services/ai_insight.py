@@ -242,7 +242,7 @@ def call_llm(prompt: str, provider: str, api_key: str) -> str:
             "X-Title": "Integra IMS",
         }
         body = {
-            "model": "google/gemma-4-26b-a4b-it:free",
+            "model": "deepseek/deepseek-v4-flash",
             "messages": [{"role": "user", "content": prompt}],
             "max_tokens": 1000,
         }
