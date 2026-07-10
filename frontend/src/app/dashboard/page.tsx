@@ -1049,11 +1049,11 @@ export default function DashboardPage() {
   /* ── Color mapping ─────────────────────────────────────── */
 
   const colorMap: Record<string, { accent: string; iconBg: string; iconColor: string; valueColor: string }> = {
-    blue:        { accent: '#4F6EF7', iconBg: '#EEF2FF', iconColor: '#4F6EF7', valueColor: '#4F6EF7' },
-    amber:       { accent: '#F59E0B', iconBg: '#FFFBEB', iconColor: '#D97706', valueColor: '#D97706' },
-    orange:      { accent: '#F97316', iconBg: '#FFF7ED', iconColor: '#EA580C', valueColor: '#EA580C' },
-    red:         { accent: '#EF4444', iconBg: '#FEF2F2', iconColor: '#DC2626', valueColor: '#DC2626' },
-    destructive: { accent: '#EF4444', iconBg: '#FEF2F2', iconColor: '#DC2626', valueColor: '#DC2626' },
+    blue:        { accent: '#6366F1', iconBg: '#EEF2FF', iconColor: '#6366F1', valueColor: '#6366F1' },
+    amber:       { accent: '#818CF8', iconBg: '#EEF2FF', iconColor: '#818CF8', valueColor: '#818CF8' },
+    orange:      { accent: '#4F46E5', iconBg: '#EDE9FE', iconColor: '#4F46E5', valueColor: '#4F46E5' },
+    red:         { accent: '#7C3AED', iconBg: '#F5F3FF', iconColor: '#7C3AED', valueColor: '#7C3AED' },
+    destructive: { accent: '#7C3AED', iconBg: '#F5F3FF', iconColor: '#7C3AED', valueColor: '#7C3AED' },
   }
 
   /* ── Render ─────────────────────────────────────────────── */
