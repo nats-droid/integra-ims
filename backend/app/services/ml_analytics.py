@@ -81,38 +81,66 @@ def fetch_ml_data(company_id: str, db: Client) -> pd.DataFrame:
     """Pull equipment + CMLs + readings → one row per equipment with features."""
 
     # --- Equipment ---
-    eq_res = (
-        db.table("equipment")
-        .select("id, tag, type, design_pressure, design_temp_max, installation_date")
-        .eq("company_id", company_id)
-        .eq("is_active", True)
-        .execute()
-    )
-    eq_map = {e["id"]: e for e in eq_res.data}
+    all_eq = []
+    offset = 0
+    while True:
+        batch = (
+            db.table("equipment")
+            .select("id, tag, type, design_pressure, design_temp_max, installation_date")
+            .eq("company_id", company_id)
+            .eq("is_active", True)
+            .range(offset, offset + 999)
+            .execute()
+        )
+        all_eq.extend(batch.data)
+        if len(batch.data) < 1000:
+            break
+        offset += 1000
+    eq_map = {e["id"]: e for e in all_eq}
 
     # --- CML points ---
-    cml_res = (
-        db.table("cml_points")
-        .select("id, equipment_id, nominal_thickness, t_required_manual")
-        .eq("company_id", company_id)
-        .execute()
-    )
+    all_cmls = []
+    offset = 0
+    while True:
+        batch = (
+            db.table("cml_points")
+            .select("id, equipment_id, nominal_thickness, t_required_manual")
+            .eq("company_id", company_id)
+            .range(offset, offset + 999)
+            .execute()
+        )
+        all_cmls.extend(batch.data)
+        if len(batch.data) < 1000:
+            break
+        offset += 1000
+    cml_res_data = all_cmls
     cml_map: dict[str, dict] = {}
     eq_cmls: dict[str, list[str]] = {}
-    for c in cml_res.data:
+    for c in cml_res_data:
         cml_map[c["id"]] = c
         eq_cmls.setdefault(c["equipment_id"], []).append(c["id"])
 
     # --- Thickness readings ---
-    tr_res = (
-        db.table("thickness_readings")
-        .select("cml_point_id, reading_mm, reading_date")
-        .eq("company_id", company_id)
-        .execute()
-    )
+    # Fetch all readings in batches (Supabase default limit 1000)
+    all_readings = []
+    offset = 0
+    batch_size = 1000
+    while True:
+        batch = (
+            db.table("thickness_readings")
+            .select("cml_point_id, reading_mm, reading_date")
+            .eq("company_id", company_id)
+            .range(offset, offset + batch_size - 1)
+            .execute()
+        )
+        all_readings.extend(batch.data)
+        if len(batch.data) < batch_size:
+            break
+        offset += batch_size
+    tr_res_data = all_readings
 
     readings_by_cml: dict[str, list[dict]] = {}
-    for r in tr_res.data:
+    for r in tr_res_data:
         readings_by_cml.setdefault(r["cml_point_id"], []).append(r)
 
     # --- Per-CML feature computation ---

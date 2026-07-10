@@ -552,14 +552,13 @@ export default function DashboardPage() {
 
         // DM per area
         const { data: dmData }: { data: any } = await supabase
-          .from('dm_validation_results')
-          .select('equipment_id, dm_name, status, equipment(area_id, plant_areas(name))')
+          .from('corrosion_anomalies')
+          .select('cml_points(equipment_id, equipment(area_id, plant_areas(name)))')
           .eq('company_id', companyId)
-          .eq('status', 'Active')
-        
+
         const dmMap: Record<string, number> = {}
         dmData?.forEach((row: any) => {
-          const area = row.equipment?.plant_areas?.name || 'Unknown'
+          const area = row.cml_points?.equipment?.plant_areas?.name || 'Unknown'
           dmMap[area] = (dmMap[area] || 0) + 1
         })
         setPlantDMData(Object.entries(dmMap).map(([area, dm_count]) => ({ area, dm_count })).sort((a,b) => b.dm_count - a.dm_count))
