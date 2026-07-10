@@ -472,7 +472,7 @@ async def get_ml_risk(
     db = get_db()
     try:
         rows = db.table("ml_risk_predictions")\
-            .select("*, equipment(tag, type, area_id)")\
+            .select("id, equipment_id, risk_score, risk_level, computed_at, equipment(tag, type, area_id)")\
             .eq("company_id", company_id)\
             .order("risk_score", desc=True)\
             .limit(500)\
@@ -505,7 +505,7 @@ async def get_ml_regression(
     db = get_db()
     try:
         rows = db.table("ml_regression_trends")\
-            .select("*, cml_points(location_label, equipment_id)")\
+            .select("id, cml_point_id, degree, r_squared, corrosion_rate, computed_at, cml_points(location_label, equipment_id)")\
             .eq("company_id", company_id)\
             .limit(500)\
             .execute()
@@ -521,7 +521,7 @@ async def get_ml_weibull(
     db = get_db()
     try:
         rows = db.table("ml_weibull_results")\
-            .select("*, cml_points(location_label, equipment_id)")\
+            .select("id, cml_point_id, beta, eta, b10_life, b50_life, computed_at, cml_points(location_label, equipment_id)")\
             .eq("company_id", company_id)\
             .limit(500)\
             .execute()
@@ -537,7 +537,7 @@ async def get_ml_survival(
     db = get_db()
     try:
         rows = db.table("ml_survival_results")\
-            .select("*, cml_points(location_label, equipment_id)")\
+            .select("id, cml_point_id, median_survival, ci_low, ci_high, computed_at, cml_points(location_label, equipment_id)")\
             .eq("company_id", company_id)\
             .limit(500)\
             .execute()
