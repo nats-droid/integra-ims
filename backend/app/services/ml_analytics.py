@@ -24,6 +24,30 @@ from xgboost import XGBClassifier, XGBRegressor
 
 logger = logging.getLogger(__name__)
 
+
+# ---------------------------------------------------------------------------
+# Helpers
+# ---------------------------------------------------------------------------
+
+def _fetch_all(db, table: str, company_id: str, select: str) -> list:
+    """Batch fetch all rows from a table for a company, bypassing Supabase 1000-row limit."""
+    all_rows = []
+    offset = 0
+    while True:
+        batch = (
+            db.table(table)
+            .select(select)
+            .eq("company_id", company_id)
+            .range(offset, offset + 999)
+            .execute()
+        )
+        all_rows.extend(batch.data)
+        if len(batch.data) < 1000:
+            break
+        offset += 1000
+    return all_rows
+
+
 # ---------------------------------------------------------------------------
 # Constants
 # ---------------------------------------------------------------------------
@@ -417,27 +441,14 @@ def run_isolation_forest(df: pd.DataFrame, company_id: str, db: Client) -> int:
 def run_regression_trends(company_id: str, db: Client) -> int:
     """Per CML: degree-2 polynomial fit, R², projected 5/10yr, insert ml_regression_trends."""
 
-    # Fetch CMLs
-    cml_res = (
-        db.table("cml_points")
-        .select("id, equipment_id, nominal_thickness, t_required_manual")
-        .eq("company_id", company_id)
-        .execute()
-    )
-
-    if not cml_res.data:
+    cml_data = _fetch_all(db, "cml_points", company_id, "id, equipment_id, nominal_thickness, t_required_manual")
+    if not cml_data:
         return 0
 
-    # Fetch readings
-    tr_res = (
-        db.table("thickness_readings")
-        .select("cml_point_id, reading_mm, reading_date")
-        .eq("company_id", company_id)
-        .execute()
-    )
+    tr_data = _fetch_all(db, "thickness_readings", company_id, "cml_point_id, reading_mm, reading_date")
 
     readings_by_cml: dict[str, list[dict]] = {}
-    for r in tr_res.data:
+    for r in tr_data:
         readings_by_cml.setdefault(r["cml_point_id"], []).append(r)
 
     db.table("ml_regression_trends").delete().eq("company_id", company_id).execute()
@@ -445,7 +456,7 @@ def run_regression_trends(company_id: str, db: Client) -> int:
     current_year = date.today().year
     rows = []
 
-    for cml in cml_res.data:
+    for cml in cml_data:
         readings = readings_by_cml.get(cml["id"], [])
         if len(readings) < 3:
             continue
@@ -499,33 +510,20 @@ def run_weibull(company_id: str, db: Client) -> int:
     """Per CML: TTF = years until thickness < t_required at current CR.
     Fit WeibullFitter per equipment. Insert ml_weibull_results."""
 
-    # Fetch CMLs
-    cml_res = (
-        db.table("cml_points")
-        .select("id, equipment_id, nominal_thickness, t_required_manual")
-        .eq("company_id", company_id)
-        .execute()
-    )
-
-    if not cml_res.data:
+    cml_data = _fetch_all(db, "cml_points", company_id, "id, equipment_id, nominal_thickness, t_required_manual")
+    if not cml_data:
         return 0
 
-    # Fetch readings
-    tr_res = (
-        db.table("thickness_readings")
-        .select("cml_point_id, reading_mm, reading_date")
-        .eq("company_id", company_id)
-        .execute()
-    )
+    tr_data = _fetch_all(db, "thickness_readings", company_id, "cml_point_id, reading_mm, reading_date")
 
     readings_by_cml: dict[str, list[dict]] = {}
-    for r in tr_res.data:
+    for r in tr_data:
         readings_by_cml.setdefault(r["cml_point_id"], []).append(r)
 
     # Per-CML TTF
     eq_ttfs: dict[str, list[float]] = {}
 
-    for cml in cml_res.data:
+    for cml in cml_data:
         readings = readings_by_cml.get(cml["id"], [])
         if len(readings) < 2:
             continue
@@ -610,34 +608,21 @@ def run_survival(company_id: str, db: Client) -> int:
     """Per CML: years remaining = (current - t_required) / CR.
     event=1 if already failed. KaplanMeierFitter per equipment."""
 
-    # Fetch CMLs
-    cml_res = (
-        db.table("cml_points")
-        .select("id, equipment_id, nominal_thickness, t_required_manual")
-        .eq("company_id", company_id)
-        .execute()
-    )
-
-    if not cml_res.data:
+    cml_data = _fetch_all(db, "cml_points", company_id, "id, equipment_id, nominal_thickness, t_required_manual")
+    if not cml_data:
         return 0
 
-    # Fetch readings
-    tr_res = (
-        db.table("thickness_readings")
-        .select("cml_point_id, reading_mm, reading_date")
-        .eq("company_id", company_id)
-        .execute()
-    )
+    tr_data = _fetch_all(db, "thickness_readings", company_id, "cml_point_id, reading_mm, reading_date")
 
     readings_by_cml: dict[str, list[dict]] = {}
-    for r in tr_res.data:
+    for r in tr_data:
         readings_by_cml.setdefault(r["cml_point_id"], []).append(r)
 
     # Per-CML survival data
     eq_durations: dict[str, list[float]] = {}
     eq_events: dict[str, list[int]] = {}
 
-    for cml in cml_res.data:
+    for cml in cml_data:
         readings = readings_by_cml.get(cml["id"], [])
         if len(readings) < 2:
             continue
