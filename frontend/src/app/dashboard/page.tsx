@@ -2,6 +2,7 @@
 export const dynamic = 'force-dynamic'
 
 import { createClient } from '@/lib/supabase/client'
+import { CHART } from '@/lib/chart-theme'
 import { useEffect, useState, useCallback } from 'react'
 import { cn } from '@/utils/cn'
 import Link from 'next/link'
@@ -123,10 +124,10 @@ function formatInspectionType(type: string): string {
 /* ── Semantic chart colors ─────────────────────────────────── */
 
 const CHART_COLORS = {
-  safe:    '#22c55e',  // green-500
-  due90:   '#fbbf24',  // amber-400
-  due60:   '#f59e0b',  // amber-500
-  due30:   '#ef4444',  // red-500
+  safe:    CHART.primary,       // indigo
+  due90:   CHART.primaryLight,  // indigo light
+  due60:   CHART.primary,       // indigo
+  due30:   CHART.primaryDark,   // indigo dark
 }
 
 /* ── Component ─────────────────────────────────────────────── */
@@ -1723,7 +1724,7 @@ export default function DashboardPage() {
                       {rlData.map((row) => {
                         const rl = row.governing_rl_years
                         const riskLevel = rl !== null && rl < 2 ? 'critical' : rl !== null && rl <= 5 ? 'monitor' : 'adequate'
-                        const barColor = riskLevel === 'critical' ? '#ef4444' : riskLevel === 'monitor' ? '#f59e0b' : '#22c55e'
+                        const barColor = CHART.primary
                         const barWidth = rl !== null ? Math.min(Math.max((rl / 20) * 100, 5), 100) : 0
                         return (
                           <tr key={row.equipment_id || row.tag} className="border-b border-border last:border-0 hover:bg-muted/20 transition-colors">

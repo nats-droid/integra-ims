@@ -13,6 +13,7 @@ import {
   Layers,
   BarChart3,
 } from 'lucide-react'
+import { CHART, CLUSTER_COLORS as THEME_CLUSTERS } from '@/lib/chart-theme'
 import { toast } from 'sonner'
 
 // ---------------------------------------------------------------------------
@@ -103,9 +104,7 @@ const RISK_COLORS: Record<string, string> = {
   low: 'bg-green-100 text-green-700',
 }
 
-const CLUSTER_COLORS = [
-  '#3b82f6', '#ef4444', '#22c55e', '#f59e0b', '#8b5cf6',
-]
+const CLUSTER_COLORS = THEME_CLUSTERS
 
 // ---------------------------------------------------------------------------
 // Plotly loader
@@ -395,8 +394,8 @@ export default function MLAnalyticsPage() {
         title: 'Equipment Clusters (PCA)',
         xaxis: { title: 'PC1' },
         yaxis: { title: 'PC2' },
-        paper_bgcolor: 'white',
-        plot_bgcolor: 'white',
+        paper_bgcolor: CHART.bg,
+        plot_bgcolor: CHART.bg,
         margin: { t: 40, r: 20, b: 50, l: 50 },
       },
       { responsive: true },
@@ -439,7 +438,7 @@ export default function MLAnalyticsPage() {
         mode: 'lines',
         type: 'scatter',
         name: 't_required',
-        line: { dash: 'dash', color: 'red' },
+        line: { dash: 'dash', color: CHART.danger },
       })
     }
 
@@ -452,8 +451,8 @@ export default function MLAnalyticsPage() {
       {
         title: `Regression Trends — R²=${avgR2.toFixed(3)}`,
         yaxis: { title: 'Thickness (mm)' },
-        paper_bgcolor: 'white',
-        plot_bgcolor: 'white',
+        paper_bgcolor: CHART.bg,
+        plot_bgcolor: CHART.bg,
         margin: { t: 40, r: 20, b: 50, l: 60 },
       },
       { responsive: true },
@@ -481,7 +480,7 @@ export default function MLAnalyticsPage() {
       mode: 'lines',
       type: 'scatter',
       name: 'PoF',
-      line: { color: '#ef4444', width: 2 },
+      line: { color: CHART.danger, width: 2 },
     }
 
     const annotations = [
@@ -513,8 +512,8 @@ export default function MLAnalyticsPage() {
         xaxis: { title: 'Time (years)' },
         yaxis: { title: 'PoF (%)', range: [0, 100] },
         annotations,
-        paper_bgcolor: 'white',
-        plot_bgcolor: 'white',
+        paper_bgcolor: CHART.bg,
+        plot_bgcolor: CHART.bg,
         margin: { t: 40, r: 20, b: 50, l: 60 },
       },
       { responsive: true },
@@ -552,7 +551,7 @@ export default function MLAnalyticsPage() {
           .map(() => row.ci_high * 100),
       ],
       fill: 'toself',
-      fillcolor: 'rgba(59,130,246,0.15)',
+      fillcolor: 'rgba(79,110,247,0.15)',
       type: 'scatter' as const,
       mode: 'none' as const,
       name: '95% CI',
@@ -565,7 +564,7 @@ export default function MLAnalyticsPage() {
       mode: 'lines',
       type: 'scatter' as const,
       name: 'Survival',
-      line: { color: '#3b82f6', width: 2 },
+      line: { color: CHART.primary, width: 2 },
     }
 
     Plotly.newPlot(
@@ -575,8 +574,8 @@ export default function MLAnalyticsPage() {
         title: `Kaplan-Meier — Median: ${row.median_survival.toFixed(1)}yr`,
         xaxis: { title: 'Time (years)' },
         yaxis: { title: 'Survival (%)', range: [0, 105] },
-        paper_bgcolor: 'white',
-        plot_bgcolor: 'white',
+        paper_bgcolor: CHART.bg,
+        plot_bgcolor: CHART.bg,
         margin: { t: 40, r: 20, b: 50, l: 60 },
       },
       { responsive: true },
