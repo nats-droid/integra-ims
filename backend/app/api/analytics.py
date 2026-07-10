@@ -475,6 +475,7 @@ async def get_ml_risk(
             .select("*, equipment(tag, type, area_id)")\
             .eq("company_id", company_id)\
             .order("risk_score", desc=True)\
+            .limit(500)\
             .execute()
         return {"data": rows.data}
     except Exception as e:
@@ -490,6 +491,7 @@ async def get_ml_clusters(
         rows = db.table("ml_clusters")\
             .select("*, equipment(tag, type)")\
             .eq("company_id", company_id)\
+            .limit(500)\
             .execute()
         return {"data": rows.data}
     except Exception as e:
