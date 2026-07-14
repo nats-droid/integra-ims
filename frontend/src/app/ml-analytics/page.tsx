@@ -58,26 +58,6 @@ interface RegressionRow {
   cml_points?: { location_label: string; equipment_id: string }
 }
 
-interface WeibullRow {
-  equipment_id: string
-  beta: number
-  eta: number
-  b10_years: number
-  b50_years: number
-  pof_curve: { t: number; pof: number }[]
-  cml_points?: { location_label: string; equipment_id: string }
-}
-
-interface SurvivalRow {
-  equipment_id: string
-  cml_point_id: string
-  median_survival: number
-  ci_low: number
-  ci_high: number
-  survival_curve: { t: number; survival: number }[]
-  cml_points?: { location_label: string; equipment_id: string }
-}
-
 interface AnomalyRow {
   id: string
   cml_point_id: string
@@ -86,14 +66,12 @@ interface AnomalyRow {
   detected_at: string
 }
 
-type TabId = 'risk' | 'clusters' | 'regression' | 'weibull' | 'survival' | 'anomaly'
+type TabId = 'risk' | 'clusters' | 'regression' | 'anomaly'
 
 const TABS: { id: TabId; label: string; icon: typeof Brain }[] = [
   { id: 'risk', label: 'Risk Scoring', icon: AlertTriangle },
   { id: 'clusters', label: 'Clustering', icon: Layers },
   { id: 'regression', label: 'Regression Trends', icon: TrendingDown },
-  { id: 'weibull', label: 'Weibull', icon: BarChart3 },
-  { id: 'survival', label: 'Survival', icon: Activity },
   { id: 'anomaly', label: 'Anomaly Detection', icon: AlertTriangle },
 ]
 
@@ -105,6 +83,23 @@ const RISK_COLORS: Record<string, string> = {
 }
 
 const CLUSTER_COLORS = THEME_CLUSTERS
+
+function InsightCard({ title, description, howToRead }: { title: string; description: string; howToRead: string }) {
+  return (
+    <div className="bg-primary/5 border border-primary/20 rounded-xl p-4 mb-4">
+      <div className="flex items-start gap-3">
+        <div className="w-8 h-8 rounded-lg bg-primary flex items-center justify-center flex-shrink-0">
+          <span className="text-white text-xs font-bold">i</span>
+        </div>
+        <div>
+          <p className="text-sm font-semibold text-foreground">{title}</p>
+          <p className="text-xs text-muted-foreground mt-1">{description}</p>
+          <p className="text-xs text-primary mt-2 font-medium">📖 {howToRead}</p>
+        </div>
+      </div>
+    </div>
+  )
+}
 
 // ---------------------------------------------------------------------------
 // Plotly loader
@@ -141,10 +136,6 @@ export default function MLAnalyticsPage() {
   const [riskData, setRiskData] = useState<RiskRow[]>([])
   const [clusterData, setClusterData] = useState<ClusterRow[]>([])
   const [regressionData, setRegressionData] = useState<RegressionRow[]>([])
-  const [weibullData, setWeibullData] = useState<WeibullRow[]>([])
-  const [survivalData, setSurvivalData] = useState<SurvivalRow[]>([])
-  const [weibullDetail, setWeibullDetail] = useState<any>(null)
-  const [survivalDetail, setSurvivalDetail] = useState<any>(null)
   const [anomalyData, setAnomalyData] = useState<AnomalyRow[]>([])
 
   // Filters
@@ -245,58 +236,6 @@ export default function MLAnalyticsPage() {
     }
   }, [companyId])
 
-  const loadWeibull = useCallback(async () => {
-    if (!companyId) return
-    try {
-      const { data: { session } } = await supabase.auth.getSession()
-      const res = await fetch(`/api/backend/api/v1/ml/weibull/${companyId}`, {
-        headers: { Authorization: `Bearer ${session?.access_token}` },
-      })
-      const json = await res.json()
-      setWeibullData(json.data || [])
-    } catch {
-      toast.error('Failed to load Weibull data')
-    }
-  }, [companyId])
-
-  const loadSurvival = useCallback(async () => {
-    if (!companyId) return
-    try {
-      const { data: { session } } = await supabase.auth.getSession()
-      const res = await fetch(`/api/backend/api/v1/ml/survival/${companyId}`, {
-        headers: { Authorization: `Bearer ${session?.access_token}` },
-      })
-      const json = await res.json()
-      setSurvivalData(json.data || [])
-    } catch {
-      toast.error('Failed to load survival data')
-    }
-  }, [companyId])
-
-  const loadWeibullDetail = useCallback(async (cmlId: string) => {
-    if (!companyId) return
-    try {
-      const { data: { session } } = await supabase.auth.getSession()
-      const res = await fetch(`/api/backend/api/v1/ml/weibull-detail/${companyId}/${cmlId}`, {
-        headers: { Authorization: `Bearer ${session?.access_token}` },
-      })
-      const json = await res.json()
-      setWeibullDetail(json.data)
-    } catch { /* silent */ }
-  }, [companyId])
-
-  const loadSurvivalDetail = useCallback(async (cmlId: string) => {
-    if (!companyId) return
-    try {
-      const { data: { session } } = await supabase.auth.getSession()
-      const res = await fetch(`/api/backend/api/v1/ml/survival-detail/${companyId}/${cmlId}`, {
-        headers: { Authorization: `Bearer ${session?.access_token}` },
-      })
-      const json = await res.json()
-      setSurvivalDetail(json.data)
-    } catch { /* silent */ }
-  }, [companyId])
-
   const loadAnomalies = useCallback(async () => {
     if (!companyId) return
     try {
@@ -325,15 +264,11 @@ export default function MLAnalyticsPage() {
           return loadClusters()
         case 'regression':
           return loadRegression()
-        case 'weibull':
-          return loadWeibull()
-        case 'survival':
-          return loadSurvival()
         case 'anomaly':
           return loadAnomalies()
       }
     },
-    [loadRisk, loadClusters, loadRegression, loadWeibull, loadSurvival, loadAnomalies],
+    [loadRisk, loadClusters, loadRegression, loadAnomalies],
   )
 
   // Load status + tab data on mount / company change
@@ -485,141 +420,6 @@ export default function MLAnalyticsPage() {
     )
   }, [activeTab, regressionData, selectedEquipment])
 
-  // Weibull PoF chart
-  useEffect(() => {
-    if (activeTab !== 'weibull' || !weibullData.length) return
-    const Plotly = (window as any).Plotly
-    if (!Plotly) return
-
-    const eqIds = [...new Set(weibullData.map((w) => w.equipment_id))]
-    if (!selectedEquipment && eqIds.length) {
-      setSelectedEquipment(eqIds[0])
-      return
-    }
-
-    const row = weibullDetail
-    if (!row?.pof_curve?.length) return
-
-    const trace = {
-      x: row.pof_curve.map((p: any) => p.t),
-      y: row.pof_curve.map((p: any) => p.pof * 100),
-      mode: 'lines',
-      type: 'scatter',
-      name: 'PoF',
-      line: { color: CHART.danger, width: 2 },
-    }
-
-    const annotations = [
-      {
-        x: row.b10_years,
-        y: 10,
-        text: `B10: ${row.b10_years.toFixed(1)}yr`,
-        showarrow: true,
-        arrowhead: 2,
-        ax: 40,
-        ay: -30,
-      },
-      {
-        x: row.b50_years,
-        y: 50,
-        text: `B50: ${row.b50_years.toFixed(1)}yr`,
-        showarrow: true,
-        arrowhead: 2,
-        ax: 40,
-        ay: -30,
-      },
-    ]
-
-    Plotly.newPlot(
-      'weibull-plot',
-      [trace],
-      {
-        title: `Weibull PoF — β=${row.beta.toFixed(2)}, η=${row.eta.toFixed(1)}`,
-        xaxis: { title: 'Time (years)' },
-        yaxis: { title: 'PoF (%)', range: [0, 100] },
-        annotations,
-        paper_bgcolor: CHART.bg,
-        plot_bgcolor: CHART.bg,
-        margin: { t: 40, r: 20, b: 50, l: 60 },
-      },
-      { responsive: true },
-    )
-  }, [activeTab, weibullData, weibullDetail, selectedEquipment])
-
-  // Fetch weibull detail when selection changes
-  useEffect(() => {
-    if (activeTab === 'weibull' && selectedEquipment) {
-      loadWeibullDetail(selectedEquipment)
-    }
-  }, [activeTab, selectedEquipment, loadWeibullDetail])
-
-  // Survival chart
-  useEffect(() => {
-    if (activeTab !== 'survival' || !survivalData.length) return
-    const Plotly = (window as any).Plotly
-    if (!Plotly) return
-
-    const eqIds = [...new Set(survivalData.map((s) => s.cml_point_id))]
-    if (!selectedEquipment && eqIds.length) {
-      setSelectedEquipment(eqIds[0])
-      return
-    }
-
-    const row = survivalDetail
-    if (!row?.survival_curve?.length) return
-
-    const times = row.survival_curve.map((p: any) => p.t)
-    const survival = row.survival_curve.map((p: any) => p.survival * 100)
-
-    // CI band
-    const ciBand = {
-      x: [...times, ...times.slice().reverse()],
-      y: [
-        ...survival.map(() => row.ci_low * 100),
-        ...survival
-          .slice()
-          .reverse()
-          .map(() => row.ci_high * 100),
-      ],
-      fill: 'toself',
-      fillcolor: 'rgba(79,110,247,0.15)',
-      type: 'scatter' as const,
-      mode: 'none' as const,
-      name: '95% CI',
-      showlegend: true,
-    }
-
-    const mainLine = {
-      x: times,
-      y: survival,
-      mode: 'lines',
-      type: 'scatter' as const,
-      name: 'Survival',
-      line: { color: CHART.primary, width: 2 },
-    }
-
-    Plotly.newPlot(
-      'survival-plot',
-      [ciBand, mainLine],
-      {
-        title: `Kaplan-Meier — Median: ${row.median_survival.toFixed(1)}yr`,
-        xaxis: { title: 'Time (years)' },
-        yaxis: { title: 'Survival (%)', range: [0, 105] },
-        paper_bgcolor: CHART.bg,
-        plot_bgcolor: CHART.bg,
-        margin: { t: 40, r: 20, b: 50, l: 60 },
-      },
-      { responsive: true },
-    )
-  }, [activeTab, survivalData, survivalDetail, selectedEquipment])
-
-  // Fetch survival detail when selection changes
-  useEffect(() => {
-    if (activeTab === 'survival' && selectedEquipment) {
-      loadSurvivalDetail(selectedEquipment)
-    }
-  }, [activeTab, selectedEquipment, loadSurvivalDetail])
-
   // -----------------------------------------------------------------------
   // Helpers
   // -----------------------------------------------------------------------
@@ -722,10 +522,8 @@ export default function MLAnalyticsPage() {
         })}
       </div>
 
-      {/* Equipment filter (shared for regression/weibull/survival) */}
-      {(activeTab === 'regression' ||
-        activeTab === 'weibull' ||
-        activeTab === 'survival') && (
+      {/* Equipment filter (regression) */}
+      {activeTab === 'regression' && (
         <div className="mb-4">
           <label className="text-sm font-medium text-gray-700 mr-2">
             Equipment:
@@ -736,13 +534,7 @@ export default function MLAnalyticsPage() {
             className="border border-gray-300 rounded px-3 py-1.5 text-sm"
           >
             <option value="">— Select —</option>
-            {[...new Set(
-              activeTab === 'regression'
-                ? regressionData.map((r) => r.equipment_id)
-                : activeTab === 'weibull'
-                  ? weibullData.map((w) => w.equipment_id)
-                  : survivalData.map((s) => s.cml_point_id),
-            )].map((eqId) => (
+            {[...new Set(regressionData.map((r) => r.equipment_id))].map((eqId) => (
               <option key={eqId} value={eqId}>
                 {equipmentTags().get(eqId) || eqId.slice(0, 8)}
               </option>
@@ -754,6 +546,11 @@ export default function MLAnalyticsPage() {
       {/* ── Tab: Risk Scoring ──────────────────────────────────────────── */}
       {activeTab === 'risk' && (
         <div className="overflow-x-auto">
+          <InsightCard
+            title="XGBoost Risk Scoring"
+            description="Machine learning model yang memprediksi risk level setiap equipment berdasarkan corrosion rate, thickness loss, umur equipment, design pressure, dan temperature."
+            howToRead="Equipment dengan risk score > 70% perlu prioritas inspeksi segera. Semakin merah badge-nya, semakin tinggi probabilitas kegagalan."
+          />
           {riskData.length === 0 ? (
             <p className="text-gray-500 text-sm py-8 text-center">
               No risk data. Run ML pipeline first.
@@ -833,6 +630,11 @@ export default function MLAnalyticsPage() {
       {/* ── Tab: Clustering ────────────────────────────────────────────── */}
       {activeTab === 'clusters' && (
         <div>
+          <InsightCard
+            title="KMeans Clustering"
+            description="Algoritma clustering yang mengelompokkan equipment berdasarkan kesamaan pola korosi. Equipment dalam satu cluster memiliki karakteristik degradasi yang mirip."
+            howToRead="Equipment di cluster yang sama cenderung memiliki laju korosi dan umur serupa. Gunakan untuk merencanakan inspeksi massal per cluster."
+          />
           {clusterData.length === 0 ? (
             <p className="text-gray-500 text-sm py-8 text-center">
               No cluster data. Run ML pipeline first.
@@ -861,6 +663,11 @@ export default function MLAnalyticsPage() {
       {/* ── Tab: Regression Trends ─────────────────────────────────────── */}
       {activeTab === 'regression' && (
         <div>
+          <InsightCard
+            title="Polynomial Regression Trend"
+            description="Analisis tren ketebalan dinding per CML menggunakan polynomial regression degree-2. Menghasilkan corrosion rate aktual dan proyeksi ketebalan ke depan."
+            howToRead="Nilai R² mendekati 1.0 berarti tren sangat konsisten. Corrosion rate tinggi (> 0.5 mm/yr) butuh perhatian. Pilih equipment dari dropdown untuk melihat detail CML-nya."
+          />
           {regressionData.length === 0 ? (
             <p className="text-gray-500 text-sm py-8 text-center">
               No regression data. Run ML pipeline first.
@@ -875,43 +682,14 @@ export default function MLAnalyticsPage() {
         </div>
       )}
 
-      {/* ── Tab: Weibull ───────────────────────────────────────────────── */}
-      {activeTab === 'weibull' && (
-        <div>
-          {weibullData.length === 0 ? (
-            <p className="text-gray-500 text-sm py-8 text-center">
-              No Weibull data. Run ML pipeline first.
-            </p>
-          ) : selectedEquipment ? (
-            <div id="weibull-plot" style={{ width: '100%', height: 500 }} />
-          ) : (
-            <p className="text-gray-400 text-sm py-8 text-center">
-              Select equipment above.
-            </p>
-          )}
-        </div>
-      )}
-
-      {/* ── Tab: Survival ──────────────────────────────────────────────── */}
-      {activeTab === 'survival' && (
-        <div>
-          {survivalData.length === 0 ? (
-            <p className="text-gray-500 text-sm py-8 text-center">
-              No survival data. Run ML pipeline first.
-            </p>
-          ) : selectedEquipment ? (
-            <div id="survival-plot" style={{ width: '100%', height: 500 }} />
-          ) : (
-            <p className="text-gray-400 text-sm py-8 text-center">
-              Select equipment above.
-            </p>
-          )}
-        </div>
-      )}
-
       {/* ── Tab: Anomaly Detection ─────────────────────────────────────── */}
       {activeTab === 'anomaly' && (
         <div className="overflow-x-auto">
+          <InsightCard
+            title="Isolation Forest Anomaly Detection"
+            description="Algoritma anomaly detection yang mengidentifikasi equipment dengan pola korosi tidak normal dibandingkan fleet secara keseluruhan."
+            howToRead="Equipment dengan IF score negatif (< -0.1) menunjukkan perilaku abnormal. Kombinasikan dengan Z-Score untuk konfirmasi anomali."
+          />
           {anomalyData.length === 0 ? (
             <p className="text-gray-500 text-sm py-8 text-center">
               No anomaly data. Run ML pipeline first.

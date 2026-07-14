@@ -1,7 +1,7 @@
 """
 ML Analytics Engine — Integra IMS
 Runs XGBoost + SHAP, KMeans, Isolation Forest,
-Polynomial Regression, Weibull, Kaplan-Meier.
+Polynomial Regression.
 """
 
 import logging
@@ -11,7 +11,6 @@ from typing import Any
 
 import numpy as np
 import pandas as pd
-from lifelines import WeibullFitter, KaplanMeierFitter
 from shap import TreeExplainer
 from sklearn.cluster import KMeans
 from sklearn.decomposition import PCA
@@ -503,223 +502,7 @@ def run_regression_trends(company_id: str, db: Client) -> int:
 
 
 # ---------------------------------------------------------------------------
-# 6. Weibull analysis
-# ---------------------------------------------------------------------------
-
-def run_weibull(company_id: str, db: Client) -> int:
-    """Per CML: TTF = years until thickness < t_required at current CR.
-    Fit WeibullFitter per equipment. Insert ml_weibull_results."""
-
-    cml_data = _fetch_all(db, "cml_points", company_id, "id, equipment_id, nominal_thickness, t_required_manual")
-    if not cml_data:
-        return 0
-
-    tr_data = _fetch_all(db, "thickness_readings", company_id, "cml_point_id, reading_mm, reading_date")
-
-    readings_by_cml: dict[str, list[dict]] = {}
-    for r in tr_data:
-        readings_by_cml.setdefault(r["cml_point_id"], []).append(r)
-
-    # Per-CML TTF
-    eq_ttfs: dict[str, list[float]] = {}
-
-    for cml in cml_data:
-        readings = readings_by_cml.get(cml["id"], [])
-        if len(readings) < 2:
-            continue
-
-        dates_sorted = sorted(readings, key=lambda r: r["reading_date"])
-        years = np.array([float(d["reading_date"][:4]) for d in dates_sorted])
-        thicknesses = np.array([_safe_float(d["reading_mm"]) for d in dates_sorted])
-
-        slope, intercept = np.polyfit(years, thicknesses, 1)
-        cr = abs(slope)
-
-        current_thickness = thicknesses[-1]
-        t_req = _safe_float(cml.get("t_required_manual"))
-
-        if cr > 0.001 and t_req > 0:
-            ttf = max((current_thickness - t_req) / cr, 0.0)
-        else:
-            ttf = 100.0  # effectively infinite
-
-        eq_id = cml["equipment_id"]
-        eq_ttfs.setdefault(eq_id, []).append(ttf)
-
-    # Fit Weibull per equipment
-    db.table("ml_weibull_results").delete().eq("company_id", company_id).execute()
-    current_year = date.today().year
-    rows = []
-
-    for eq_id, ttfs in eq_ttfs.items():
-        ttf_arr = np.array(ttfs)
-        ttf_arr = ttf_arr[ttf_arr > 0]  # remove zero/negative
-
-        if len(ttf_arr) < 2:
-            continue
-
-        try:
-            wf = WeibullFitter()
-            wf.fit(ttf_arr, event_observed=np.ones(len(ttf_arr)))
-
-            beta = round(float(wf.rho_), 4)  # shape
-            eta = round(float(wf.lambda_), 4)  # scale
-
-            # B10, B50 (quantiles)
-            b10 = round(float(wf.predict(0.10)), 2)
-            b50 = round(float(wf.predict(0.50)), 2)
-
-            # PoF curve: t=0..30 years
-            pof_curve = []
-            for t in range(31):
-                sf = wf.survival_function_at_times([t])
-                sf_val = float(np.array(sf).flat[0])
-                p = float(1 - sf_val)
-                pof_curve.append({"t": t, "pof": round(p, 4)})
-
-            rows.append(
-                {
-                    "id": _uid(),
-                    "company_id": company_id,
-                    "beta": beta,
-                    "eta": eta,
-                    "b10_life": b10,
-                    "b50_life": b50,
-                    "pof_curve": pof_curve,
-                    "computed_at": _now_iso(),
-                }
-            )
-        except Exception as e:
-            logger.warning("Weibull failed for %s: %s", eq_id, e)
-            continue
-
-    if rows:
-        db.table("ml_weibull_results").insert(rows).execute()
-
-    logger.info("run_weibull: %d results inserted", len(rows))
-    return len(rows)
-
-
-# ---------------------------------------------------------------------------
-# 7. Survival analysis (Kaplan-Meier)
-# ---------------------------------------------------------------------------
-
-def run_survival(company_id: str, db: Client) -> int:
-    """Per CML: years remaining = (current - t_required) / CR.
-    event=1 if already failed. KaplanMeierFitter per equipment."""
-
-    cml_data = _fetch_all(db, "cml_points", company_id, "id, equipment_id, nominal_thickness, t_required_manual")
-    if not cml_data:
-        return 0
-
-    tr_data = _fetch_all(db, "thickness_readings", company_id, "cml_point_id, reading_mm, reading_date")
-
-    readings_by_cml: dict[str, list[dict]] = {}
-    for r in tr_data:
-        readings_by_cml.setdefault(r["cml_point_id"], []).append(r)
-
-    # Per-CML survival data
-    eq_durations: dict[str, list[float]] = {}
-    eq_events: dict[str, list[int]] = {}
-
-    for cml in cml_data:
-        readings = readings_by_cml.get(cml["id"], [])
-        if len(readings) < 2:
-            continue
-
-        dates_sorted = sorted(readings, key=lambda r: r["reading_date"])
-        years = np.array([float(d["reading_date"][:4]) for d in dates_sorted])
-        thicknesses = np.array([_safe_float(d["reading_mm"]) for d in dates_sorted])
-
-        slope, _ = np.polyfit(years, thicknesses, 1)
-        cr = abs(slope)
-        current_thickness = thicknesses[-1]
-        t_req = _safe_float(cml.get("t_required_manual"))
-
-        if cr > 0.001:
-            duration = (current_thickness - t_req) / cr
-            duration = max(duration, 0.1)
-        else:
-            duration = 100.0
-
-        event = 1 if current_thickness < t_req else 0
-
-        eq_id = cml["equipment_id"]
-        eq_durations.setdefault(eq_id, []).append(duration)
-        eq_events.setdefault(eq_id, []).append(event)
-
-    # Fit KM per equipment
-    db.table("ml_survival_results").delete().eq("company_id", company_id).execute()
-    rows = []
-
-    for eq_id in eq_durations:
-        durations = np.array(eq_durations[eq_id])
-        events = np.array(eq_events[eq_id])
-
-        if len(durations) < 2:
-            continue
-
-        try:
-            kmf = KaplanMeierFitter()
-            kmf.fit(durations, event_observed=events)
-
-            import math
-            def safe_f(v, default=0.0):
-                try:
-                    f = float(v)
-                    return f if math.isfinite(f) else default
-                except:
-                    return default
-
-            median = safe_f(kmf.median_survival_time_, default=100.0)
-            ci = kmf.confidence_interval_survival_function_
-            ci_times = ci.index.values
-            closest_idx = int(np.argmin(np.abs(ci_times - min(median, float(ci_times.max())))))
-            ci_low = round(safe_f(ci.iloc[closest_idx, 0], default=0.0), 2)
-            ci_high = round(safe_f(ci.iloc[closest_idx, 1], default=1.0), 2)
-
-            # Survival curve: 30 sample points
-            sf = kmf.survival_function_
-            max_t = min(float(sf.index.max()), 50.0)
-            sample_times = np.linspace(0, max_t, 30)
-            survival_curve = []
-            import math
-            def safe_float(v):
-                try:
-                    f = float(v)
-                    return f if math.isfinite(f) else None
-                except:
-                    return None
-            for t in sample_times:
-                s_val = float(np.array(kmf.survival_function_at_times([t])).flat[0])
-                sf = safe_float(s_val)
-                if sf is not None:
-                    survival_curve.append({"t": t, "survival": round(sf, 4)})
-
-            rows.append(
-                {
-                    "id": _uid(),
-                    "company_id": company_id,
-                    "median_survival": round(median, 2),
-                    "ci_low": ci_low,
-                    "ci_high": ci_high,
-                    "survival_curve": survival_curve,
-                    "computed_at": _now_iso(),
-                }
-            )
-        except Exception as e:
-            logger.warning("KM failed for %s: %s", eq_id, e)
-            continue
-
-    if rows:
-        db.table("ml_survival_results").insert(rows).execute()
-
-    logger.info("run_survival: %d results inserted", len(rows))
-    return len(rows)
-
-
-# ---------------------------------------------------------------------------
-# 8. Run all ML modules
+# 6. Run all ML modules
 # ---------------------------------------------------------------------------
 
 def run_all_ml(company_id: str, db: Client) -> dict:
@@ -750,11 +533,6 @@ def run_all_ml(company_id: str, db: Client) -> dict:
         # 5. Regression trends
         results["regression_trends"] = run_regression_trends(company_id, db)
 
-        # 6. Weibull
-        results["weibull"] = run_weibull(company_id, db)
-
-        # 7. Survival
-        results["survival"] = run_survival(company_id, db)
 
     except Exception as e:
         logger.error("run_all_ml FAILED: %s", e)
