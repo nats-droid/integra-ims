@@ -143,6 +143,8 @@ export default function MLAnalyticsPage() {
   const [regressionData, setRegressionData] = useState<RegressionRow[]>([])
   const [weibullData, setWeibullData] = useState<WeibullRow[]>([])
   const [survivalData, setSurvivalData] = useState<SurvivalRow[]>([])
+  const [weibullDetail, setWeibullDetail] = useState<any>(null)
+  const [survivalDetail, setSurvivalDetail] = useState<any>(null)
   const [anomalyData, setAnomalyData] = useState<AnomalyRow[]>([])
 
   // Filters
@@ -269,6 +271,30 @@ export default function MLAnalyticsPage() {
     } catch {
       toast.error('Failed to load survival data')
     }
+  }, [companyId])
+
+  const loadWeibullDetail = useCallback(async (cmlId: string) => {
+    if (!companyId) return
+    try {
+      const { data: { session } } = await supabase.auth.getSession()
+      const res = await fetch(`/api/backend/api/v1/ml/weibull-detail/${companyId}/${cmlId}`, {
+        headers: { Authorization: `Bearer ${session?.access_token}` },
+      })
+      const json = await res.json()
+      setWeibullDetail(json.data)
+    } catch { /* silent */ }
+  }, [companyId])
+
+  const loadSurvivalDetail = useCallback(async (cmlId: string) => {
+    if (!companyId) return
+    try {
+      const { data: { session } } = await supabase.auth.getSession()
+      const res = await fetch(`/api/backend/api/v1/ml/survival-detail/${companyId}/${cmlId}`, {
+        headers: { Authorization: `Bearer ${session?.access_token}` },
+      })
+      const json = await res.json()
+      setSurvivalDetail(json.data)
+    } catch { /* silent */ }
   }, [companyId])
 
   const loadAnomalies = useCallback(async () => {
@@ -471,12 +497,12 @@ export default function MLAnalyticsPage() {
       return
     }
 
-    const row = weibullData.find((w) => w.equipment_id === selectedEquipment)
+    const row = weibullDetail
     if (!row?.pof_curve?.length) return
 
     const trace = {
-      x: row.pof_curve.map((p) => p.t),
-      y: row.pof_curve.map((p) => p.pof * 100),
+      x: row.pof_curve.map((p: any) => p.t),
+      y: row.pof_curve.map((p: any) => p.pof * 100),
       mode: 'lines',
       type: 'scatter',
       name: 'PoF',
@@ -518,7 +544,14 @@ export default function MLAnalyticsPage() {
       },
       { responsive: true },
     )
-  }, [activeTab, weibullData, selectedEquipment])
+  }, [activeTab, weibullData, weibullDetail, selectedEquipment])
+
+  // Fetch weibull detail when selection changes
+  useEffect(() => {
+    if (activeTab === 'weibull' && selectedEquipment) {
+      loadWeibullDetail(selectedEquipment)
+    }
+  }, [activeTab, selectedEquipment, loadWeibullDetail])
 
   // Survival chart
   useEffect(() => {
@@ -532,13 +565,11 @@ export default function MLAnalyticsPage() {
       return
     }
 
-    const row = survivalData.find(
-      (s) => s.cml_point_id === selectedEquipment,
-    )
+    const row = survivalDetail
     if (!row?.survival_curve?.length) return
 
-    const times = row.survival_curve.map((p) => p.t)
-    const survival = row.survival_curve.map((p) => p.survival * 100)
+    const times = row.survival_curve.map((p: any) => p.t)
+    const survival = row.survival_curve.map((p: any) => p.survival * 100)
 
     // CI band
     const ciBand = {
@@ -580,7 +611,14 @@ export default function MLAnalyticsPage() {
       },
       { responsive: true },
     )
-  }, [activeTab, survivalData, selectedEquipment])
+  }, [activeTab, survivalData, survivalDetail, selectedEquipment])
+
+  // Fetch survival detail when selection changes
+  useEffect(() => {
+    if (activeTab === 'survival' && selectedEquipment) {
+      loadSurvivalDetail(selectedEquipment)
+    }
+  }, [activeTab, selectedEquipment, loadSurvivalDetail])
 
   // -----------------------------------------------------------------------
   // Helpers

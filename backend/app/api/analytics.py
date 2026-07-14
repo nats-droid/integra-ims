@@ -544,3 +544,39 @@ async def get_ml_survival(
         return {"data": rows.data}
     except Exception as e:
         return JSONResponse(status_code=500, content={"error": str(e)})
+
+@router.get("/ml/weibull-detail/{company_id}/{cml_point_id}")
+async def get_ml_weibull_detail(
+    company_id: str,
+    cml_point_id: str,
+    user: dict = Depends(verify_jwt),
+):
+    db = get_db()
+    try:
+        rows = db.table("ml_weibull_results")\
+            .select("*")\
+            .eq("company_id", company_id)\
+            .eq("cml_point_id", cml_point_id)\
+            .limit(1)\
+            .execute()
+        return {"data": rows.data[0] if rows.data else None}
+    except Exception as e:
+        return JSONResponse(status_code=500, content={"error": str(e)})
+
+@router.get("/ml/survival-detail/{company_id}/{cml_point_id}")
+async def get_ml_survival_detail(
+    company_id: str,
+    cml_point_id: str,
+    user: dict = Depends(verify_jwt),
+):
+    db = get_db()
+    try:
+        rows = db.table("ml_survival_results")\
+            .select("*")\
+            .eq("company_id", company_id)\
+            .eq("cml_point_id", cml_point_id)\
+            .limit(1)\
+            .execute()
+        return {"data": rows.data[0] if rows.data else None}
+    except Exception as e:
+        return JSONResponse(status_code=500, content={"error": str(e)})
