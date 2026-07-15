@@ -384,14 +384,14 @@ export default function MLAnalyticsPage() {
 
     const traces: any[] = cmls.map((cml) => ({
       x: ['5yr projection', '10yr projection'],
-      y: [cml.projected_5yr, cml.projected_10yr],
+      y: [cml.projected_thickness?.['5yr'] ?? 0, cml.projected_thickness?.['10yr'] ?? 0],
       mode: 'lines+markers',
       type: 'scatter',
       name: cml.cml_points?.location_label || cml.cml_point_id.slice(0, 8),
     }))
 
     // Add t_required line
-    const tReq = cmls[0]?.t_required || 0
+    const tReq = cmls[0]?.cml_points?.t_required_manual || 0
     if (tReq > 0) {
       traces.push({
         x: ['5yr projection', '10yr projection'],
@@ -548,8 +548,8 @@ export default function MLAnalyticsPage() {
         <div className="overflow-x-auto">
           <InsightCard
             title="XGBoost Risk Scoring"
-            description="Machine learning model yang memprediksi risk level setiap equipment berdasarkan corrosion rate, thickness loss, umur equipment, design pressure, dan temperature."
-            howToRead="Equipment dengan risk score > 70% perlu prioritas inspeksi segera. Semakin merah badge-nya, semakin tinggi probabilitas kegagalan."
+            description="XGBoost model predicting risk level for each equipment based on corrosion rate, thickness loss, age, design pressure, and temperature."
+            howToRead="Equipment with risk score above 70% needs immediate inspection priority. The redder the badge, the higher the probability of failure."
           />
           {riskData.length === 0 ? (
             <p className="text-gray-500 text-sm py-8 text-center">
@@ -632,8 +632,8 @@ export default function MLAnalyticsPage() {
         <div>
           <InsightCard
             title="KMeans Clustering"
-            description="Algoritma clustering yang mengelompokkan equipment berdasarkan kesamaan pola korosi. Equipment dalam satu cluster memiliki karakteristik degradasi yang mirip."
-            howToRead="Equipment di cluster yang sama cenderung memiliki laju korosi dan umur serupa. Gunakan untuk merencanakan inspeksi massal per cluster."
+            description="KMeans algorithm grouping equipment by corrosion pattern similarity. Equipment in the same cluster share similar degradation characteristics."
+            howToRead="Equipment in the same cluster tend to have similar corrosion rates and remaining life. Use this to plan batch inspections per cluster."
           />
           {clusterData.length === 0 ? (
             <p className="text-gray-500 text-sm py-8 text-center">
@@ -665,8 +665,8 @@ export default function MLAnalyticsPage() {
         <div>
           <InsightCard
             title="Polynomial Regression Trend"
-            description="Analisis tren ketebalan dinding per CML menggunakan polynomial regression degree-2. Menghasilkan corrosion rate aktual dan proyeksi ketebalan ke depan."
-            howToRead="Nilai R² mendekati 1.0 berarti tren sangat konsisten. Corrosion rate tinggi (> 0.5 mm/yr) butuh perhatian. Pilih equipment dari dropdown untuk melihat detail CML-nya."
+            description="Per-CML thickness trend analysis using degree-2 polynomial regression. Outputs actual corrosion rate and projected thickness over time."
+            howToRead="R² close to 1.0 means a very consistent trend. High corrosion rate above 0.5 mm/yr needs attention. Select equipment from the dropdown to view CML details."
           />
           {regressionData.length === 0 ? (
             <p className="text-gray-500 text-sm py-8 text-center">
@@ -687,8 +687,8 @@ export default function MLAnalyticsPage() {
         <div className="overflow-x-auto">
           <InsightCard
             title="Isolation Forest Anomaly Detection"
-            description="Algoritma anomaly detection yang mengidentifikasi equipment dengan pola korosi tidak normal dibandingkan fleet secara keseluruhan."
-            howToRead="Equipment dengan IF score negatif (< -0.1) menunjukkan perilaku abnormal. Kombinasikan dengan Z-Score untuk konfirmasi anomali."
+            description="Isolation Forest algorithm identifying equipment with abnormal corrosion patterns compared to the overall fleet."
+            howToRead="Equipment with IF score below -0.1 shows abnormal behavior. Cross-reference with Z-Score anomalies for confirmation."
           />
           {anomalyData.length === 0 ? (
             <p className="text-gray-500 text-sm py-8 text-center">
