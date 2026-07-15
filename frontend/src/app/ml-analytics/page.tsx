@@ -52,10 +52,8 @@ interface RegressionRow {
   cml_point_id: string
   equipment_id: string
   r_squared: number
-  projected_5yr: number
-  projected_10yr: number
-  t_required: number
-  cml_points?: { location_label: string; equipment_id: string }
+  projected_thickness?: Record<string, number>
+  cml_points?: { location_label: string; equipment_id: string; t_required_manual?: number }
 }
 
 interface AnomalyRow {
