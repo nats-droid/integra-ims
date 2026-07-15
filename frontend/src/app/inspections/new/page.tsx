@@ -230,6 +230,7 @@ function InspectionsNewPageInner() {
 
   useEffect(() => {
     const equipId = searchParams.get('equipment_id')
+    const campaignId = searchParams.get('campaign_id')
     if (!equipId || autoLoaded) return
     setAutoLoaded(true)
 
@@ -670,6 +671,7 @@ function InspectionsNewPageInner() {
         .insert({
           company_id: companyId,
           equipment_id: selectedEquipment.id,
+          campaign_id: searchParams.get('campaign_id') || null,
           inspector_id: appUser.id,
           inspection_type: inspectionType,
           event_date: eventDate,

@@ -259,6 +259,7 @@ export default function CampaignDetailPage() {
                     <th className="text-left px-5 py-2.5 font-medium">Type</th>
                     <th className="text-left px-5 py-2.5 font-medium">Selection</th>
                     <th className="text-left px-5 py-2.5 font-medium">Inspection</th>
+                    <th className="text-left px-5 py-2.5 font-medium">Action</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -283,6 +284,23 @@ export default function CampaignDetailPage() {
                           <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-gray-100 text-gray-600 dark:bg-gray-800 dark:text-gray-400">
                             Not Started
                           </span>
+                        )}
+                      </td>
+                      <td className="px-5 py-2.5">
+                        {!eq.inspection_event_id ? (
+                          <button
+                            onClick={() => router.push(`/inspections/new?equipment_id=${eq.equipment_id}&campaign_id=${campaignId}`)}
+                            className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-primary text-white text-xs font-medium hover:bg-primary/90 transition-colors"
+                          >
+                            Start Inspection
+                          </button>
+                        ) : (
+                          <button
+                            onClick={() => router.push(`/inspections/${eq.inspection_event_id}`)}
+                            className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-border text-xs font-medium hover:bg-muted transition-colors"
+                          >
+                            View
+                          </button>
                         )}
                       </td>
                     </tr>
