@@ -770,6 +770,16 @@ function InspectionsNewPageInner() {
         }
       }
 
+      // 5. Update campaign_equipment if came from campaign
+      const campaignIdParam = searchParams.get('campaign_id')
+      if (campaignIdParam && selectedEquipment?.id) {
+        await sb
+          .from('campaign_equipment')
+          .update({ inspection_event_id: eventId })
+          .eq('campaign_id', campaignIdParam)
+          .eq('equipment_id', selectedEquipment.id)
+      }
+
       toast.success('Inspection submitted successfully')
       router.push(`/inspections/${eventId}`)
     } catch (err) {
