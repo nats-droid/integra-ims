@@ -352,7 +352,7 @@ export default function InspectionDetailPage({
       }
 
       // Fetch photos
-      const photoResults = await getEventPhotos(inspectionId)
+      const photoResults = await getEventPhotos(id)
       setPhotos(photoResults)
     } catch (err) {
       console.error('Load inspection detail error:', err)
