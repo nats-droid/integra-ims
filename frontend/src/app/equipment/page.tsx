@@ -138,8 +138,9 @@ export default function EquipmentListPage() {
         const { data: cmlData } = await sb
           .from('cml_points')
           .select('equipment_id, id')
-          .in('equipment_id', equipmentIds)
+          .eq('company_id', companyId)
           .eq('is_active', true)
+          .limit(5000)
 
         if (cmlData) {
           const cmlRows = cmlData as { equipment_id: string; id: string }[]
@@ -151,14 +152,10 @@ export default function EquipmentListPage() {
 
         const { data: readingData } = await sb
           .from('thickness_readings')
-          .select(
-            `
-            reading_date,
-            cml_point:cml_points!thickness_readings_cml_point_id_fkey(equipment_id)
-          `
-          )
-          .in('cml_point.equipment_id', equipmentIds)
+          .select('reading_date, cml_point_id, cml_points(equipment_id)')
+          .eq('company_id', companyId)
           .order('reading_date', { ascending: false })
+          .limit(5000)
 
         if (readingData) {
           const readings = readingData as {
@@ -167,7 +164,7 @@ export default function EquipmentListPage() {
           }[]
           const seen = new Set<string>()
           for (const r of readings) {
-            const eqId = r.cml_point?.equipment_id
+            const eqId = (r as any).cml_points?.equipment_id
             if (eqId && !seen.has(eqId)) {
               seen.add(eqId)
               latestReadings[eqId] = r.reading_date
