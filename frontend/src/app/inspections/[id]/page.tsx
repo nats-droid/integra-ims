@@ -15,6 +15,7 @@ import {
   Download,
   Camera,
 } from 'lucide-react'
+import { getEventPhotos } from '@/utils/photos'
 import jsPDF from 'jspdf'
 import html2canvas from 'html2canvas'
 
@@ -172,6 +173,7 @@ export default function InspectionDetailPage({
   const [userRole, setUserRole] = useState<string>('')
   const [pdfGenerating, setPdfGenerating] = useState(false)
   const [actionLoading, setActionLoading] = useState(false)
+  const [photos, setPhotos] = useState<any[]>([])
 
   // =========================================================================
   // Fetch all data
@@ -348,6 +350,10 @@ export default function InspectionDetailPage({
 
         setThicknessRows(displayRows)
       }
+
+      // Fetch photos
+      const photoResults = await getEventPhotos(inspectionId)
+      setPhotos(photoResults)
     } catch (err) {
       console.error('Load inspection detail error:', err)
       toast.error('Failed to load inspection details')
@@ -449,7 +455,7 @@ export default function InspectionDetailPage({
     (inspection?.status === 'submitted' || inspection?.status === 'approved')
 
   const canApproveReject =
-    userRole === 'engineer' && inspection?.status === 'submitted'
+    (userRole === 'engineer' || userRole === 'supervisor' || userRole === 'super_admin') && inspection?.status === 'submitted'
 
   // =========================================================================
   // Render
@@ -738,10 +744,29 @@ export default function InspectionDetailPage({
         {/* Section 4 — Photos */}
         <div className="rounded-xl border border-border/70 p-6">
           <h2 className="text-lg font-semibold mb-4">Photos</h2>
-          <div className="flex items-center gap-2 text-muted-foreground">
-            <Camera className="h-5 w-5" />
-            <p className="text-sm">No photos recorded.</p>
-          </div>
+          {photos.length === 0 ? (
+            <div className="flex items-center gap-2 text-muted-foreground">
+              <Camera className="h-5 w-5" />
+              <p className="text-sm">No photos recorded.</p>
+            </div>
+          ) : (
+            <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3">
+              {photos.map((photo) => (
+                <div key={photo.id} className="relative group rounded-lg overflow-hidden border border-border aspect-square">
+                  <img
+                    src={photo.signedUrl}
+                    alt={photo.caption || 'Inspection photo'}
+                    className="w-full h-full object-cover"
+                  />
+                  {photo.caption && (
+                    <div className="absolute bottom-0 left-0 right-0 bg-black/60 text-white text-xs p-1.5 truncate">
+                      {photo.caption}
+                    </div>
+                  )}
+                </div>
+              ))}
+            </div>
+          )}
         </div>
       </div>
 
