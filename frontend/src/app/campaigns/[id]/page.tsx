@@ -54,9 +54,9 @@ function getDateStatus(start: string, end: string): { label: string; color: stri
   return { label: 'Active', color: 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400' }
 }
 
-function readableCriteria(criteria: Record<string, unknown>): string[] {
+function readableCriteria(criteria: Record<string, unknown>, areaMap: Map<string, string>): string[] {
   const parts: string[] = []
-  if (criteria.area_id) parts.push(`Area: ${criteria.area_id}`)
+  if (criteria.area_id) parts.push(`Area: ${areaMap.get(criteria.area_id as string) || criteria.area_id}`)
   if (criteria.type) parts.push(`Type: ${criteria.type}`)
   if (criteria.insulation_type) parts.push(`Insulation: ${criteria.insulation_type}`)
   if (criteria.risk_category) parts.push(`Risk: ${criteria.risk_category}`)
@@ -75,6 +75,7 @@ export default function CampaignDetailPage() {
   const [userRole, setUserRole] = useState<string | null>(null)
   const [showDelete, setShowDelete] = useState(false)
   const [deleting, setDeleting] = useState(false)
+  const [areaMap, setAreaMap] = useState<Map<string, string>>(new Map())
 
   const fetchData = useCallback(async () => {
     try {
@@ -105,6 +106,7 @@ export default function CampaignDetailPage() {
 
         const { data: areaData } = await sb.from('plant_areas').select('id, name').eq('company_id', appUser.company_id)
         const areaMap: Map<string, string> = new Map((areaData || []).map((a: { id: string; name: string }) => [a.id, a.name] as const))
+        setAreaMap(areaMap)
         const eqMap: Map<string, { id: string; tag: string; type: string; area_id: string }> = new Map((eqData || []).map((e: { id: string; tag: string; type: string; area_id: string }) => [e.id, e] as const))
 
         const rows: CampaignEquipmentRow[] = ceData.map((ce: { id: string; equipment_id: string; selection_status: string; inspection_event_id: string | null }) => {
@@ -179,7 +181,7 @@ export default function CampaignDetailPage() {
   const progress = campaign.target_count > 0 ? Math.round((completedCount / campaign.target_count) * 100) : 0
   const startDate = new Date(campaign.start_date).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
   const endDate = new Date(campaign.end_date).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
-  const criteria = readableCriteria(campaign.selection_criteria || {})
+  const criteria = readableCriteria(campaign.selection_criteria || {}, areaMap)
 
   return (
     <AppLayout>

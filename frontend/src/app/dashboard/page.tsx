@@ -550,15 +550,16 @@ export default function DashboardPage() {
           .sort((a, b) => b.avg_cr - a.avg_cr)
         setPlantCRData(crResult)
 
-        // DM per area
-        const { data: dmData }: { data: any } = await supabase
-          .from('corrosion_anomalies')
-          .select('cml_points(equipment_id, equipment(area_id, plant_areas(name)))')
+        // Equipment count per area
+        const { data: eqAreaData }: { data: any } = await supabase
+          .from('equipment')
+          .select('area_id, plant_areas(name)')
           .eq('company_id', companyId)
+          .eq('is_active', true)
 
         const dmMap: Record<string, number> = {}
-        dmData?.forEach((row: any) => {
-          const area = row.cml_points?.equipment?.plant_areas?.name || 'Unknown'
+        eqAreaData?.forEach((row: any) => {
+          const area = row.plant_areas?.name || 'Unknown'
           dmMap[area] = (dmMap[area] || 0) + 1
         })
         setPlantDMData(Object.entries(dmMap).map(([area, dm_count]) => ({ area, dm_count })).sort((a,b) => b.dm_count - a.dm_count))
