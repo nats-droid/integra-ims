@@ -814,12 +814,22 @@ export default function DashboardPage() {
       setRlLoading(true)
       try {
         // 1. Fetch all RL predictions (latest per CML)
-        const { data: rlRows } = await (supabase as any)
-          .from('rl_predictions')
-          .select('id, cml_point_id, confidence_low, confidence_high, predicted_rl_years, computed_at, cml_points(id, location_label, equipment_id)')
-          .eq('company_id', companyId)
-          .order('computed_at', { ascending: false })
-          .limit(5000)
+        // Batch fetch all RL predictions
+        let allRlRows: any[] = []
+        let rlOffset = 0
+        while (true) {
+          const { data: batch } = await (supabase as any)
+            .from('rl_predictions')
+            .select('id, cml_point_id, confidence_low, confidence_high, predicted_rl_years, computed_at, cml_points(id, location_label, equipment_id)')
+            .eq('company_id', companyId)
+            .order('computed_at', { ascending: false })
+            .range(rlOffset, rlOffset + 999)
+          if (!batch || batch.length === 0) break
+          allRlRows = [...allRlRows, ...batch]
+          if (batch.length < 1000) break
+          rlOffset += 1000
+        }
+        const rlRows = allRlRows
 
         // 2. Fetch all equipment + plant areas
         const { data: allEquips } = await (supabase as any)
@@ -855,7 +865,7 @@ export default function DashboardPage() {
 
           // Track min confidence_low per equipment (governing RL)
           const rlVal = r.confidence_low ?? r.predicted_rl_years
-          if (rlVal === null && rlVal === undefined) continue
+          if (rlVal === null || rlVal === undefined) continue
 
           if (!rlByEquip[eqId] || rlVal < rlByEquip[eqId].confidence_low) {
             rlByEquip[eqId] = {
