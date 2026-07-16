@@ -512,3 +512,122 @@ async def get_ml_regression(
         return {"data": rows.data}
     except Exception as e:
         return JSONResponse(status_code=500, content={"error": str(e)})
+
+@router.get("/thickness/data/{company_id}")
+async def get_thickness_data(
+    company_id: str,
+    user: dict = Depends(verify_jwt),
+):
+    """
+    Return all CML thickness data for thickness analytics page.
+    Computes CR, RL, Priority, Status per CML from latest readings.
+    """
+    db = get_db()
+    try:
+        # Fetch all CMLs with equipment + circuit info
+        all_cmls = []
+        offset = 0
+        while True:
+            batch = db.table("cml_points")\
+                .select("id, location_label, nominal_thickness, t_required_manual, location_deg, object_type, part, equipment_id, circuit_id, equipment(tag, type, fluid_service, area_id, plant_areas(name)), circuits(iso_number, fluid)")\
+                .eq("company_id", company_id)\
+                .eq("is_active", True)\
+                .range(offset, offset + 999)\
+                .execute()
+            all_cmls.extend(batch.data)
+            if len(batch.data) < 1000:
+                break
+            offset += 1000
+
+        # Fetch latest thickness reading per CML
+        all_readings = []
+        offset = 0
+        while True:
+            batch = db.table("thickness_readings")\
+                .select("cml_point_id, reading_mm, reading_date")\
+                .eq("company_id", company_id)\
+                .order("reading_date", desc=True)\
+                .range(offset, offset + 999)\
+                .execute()
+            all_readings.extend(batch.data)
+            if len(batch.data) < 1000:
+                break
+            offset += 1000
+
+        # Group readings by CML — keep all for CR computation
+        from collections import defaultdict
+        readings_by_cml = defaultdict(list)
+        for r in all_readings:
+            readings_by_cml[r["cml_point_id"]].append(r)
+
+        import numpy as np
+
+        RETIRE_FRAC = 0.875  # t_min = 87.5% nominal (API 570)
+        rows = []
+
+        for cml in all_cmls:
+            cml_id = cml["id"]
+            nominal = cml.get("nominal_thickness")
+            t_req = cml.get("t_required_manual") or (nominal * RETIRE_FRAC if nominal else None)
+            eq = cml.get("equipment") or {}
+            circuit = cml.get("circuits") or {}
+
+            if not nominal:
+                continue
+
+            cml_readings = sorted(readings_by_cml.get(cml_id, []), key=lambda r: r["reading_date"])
+            if not cml_readings:
+                continue
+
+            measured = float(cml_readings[-1]["reading_mm"])
+            latest_date = cml_readings[-1]["reading_date"]
+
+            # Compute CR via linear regression if multiple readings
+            cr = 0.0
+            if len(cml_readings) >= 2:
+                years = np.array([float(r["reading_date"][:4]) + float(r["reading_date"][5:7]) / 12 for r in cml_readings])
+                thicknesses = np.array([float(r["reading_mm"]) for r in cml_readings])
+                slope = np.polyfit(years, thicknesses, 1)[0]
+                cr = max(-slope, 0.0)
+
+            thk_loss = max(0, nominal - measured)
+            thk_loss_pct = round(thk_loss / nominal * 100, 2) if nominal > 0 else 0
+
+            t_min_val = t_req if t_req else nominal * RETIRE_FRAC
+            rl = ((measured - t_min_val) / cr) if cr > 0 else 99
+            rl = max(0, min(99, rl))
+
+            priority = "CRITICAL" if rl <= 2 else "HIGH" if rl <= 5 else "MEDIUM" if rl <= 10 else "LOW"
+            status = "RETIRE" if measured <= t_min_val else "WARNING" if measured <= t_min_val * 1.1 else "OK"
+
+            area_name = "—"
+            if isinstance(eq.get("plant_areas"), dict):
+                area_name = eq["plant_areas"].get("name", "—")
+
+            rows.append({
+                "cml_id": cml_id,
+                "plant": area_name,
+                "equipment_tag": eq.get("tag", "—"),
+                "equipment_type": eq.get("type", "—"),
+                "iso_number": circuit.get("iso_number", "—"),
+                "fluid": circuit.get("fluid") or eq.get("fluid_service", "—"),
+                "object_type": cml.get("object_type", "—"),
+                "part": cml.get("part", "—"),
+                "no_cml": cml.get("location_label", "—"),
+                "location_deg": cml.get("location_deg"),
+                "nominal_thk": nominal,
+                "measured_thk": measured,
+                "t_min": round(t_min_val, 3),
+                "thk_loss_pct": thk_loss_pct,
+                "cr_mm_yr": round(cr, 4),
+                "remaining_life_yr": round(rl, 2),
+                "priority": priority,
+                "status_thk": status,
+                "latest_date": latest_date,
+            })
+
+        return {"data": rows, "total": len(rows)}
+
+    except Exception as e:
+        logger.error(f"get_thickness_data error: {e}")
+        return JSONResponse(status_code=500, content={"error": str(e)})
