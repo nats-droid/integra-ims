@@ -21,7 +21,9 @@ import {
   RefreshCw,
   Map,
   Loader2,
+  Download,
 } from 'lucide-react'
+import { exportRLExcel } from '@/lib/excel'
 import {
   BarChart,
   Bar,
@@ -1674,6 +1676,13 @@ export default function DashboardPage() {
                 <p className="text-xs text-muted-foreground">Not yet computed</p>
               </div>
             )}
+            <button
+              onClick={() => exportRLExcel(rlData)}
+              className="inline-flex items-center gap-2 px-3 py-1.5 text-sm border border-border rounded-lg hover:bg-muted transition-colors"
+            >
+              <Download className="h-4 w-4" />
+              Export Excel
+            </button>
           </div>
 
           {rlLoading ? (
