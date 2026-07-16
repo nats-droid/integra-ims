@@ -135,40 +135,47 @@ export default function EquipmentListPage() {
       let latestReadings: Record<string, string | null> = {}
 
       if (equipmentIds.length > 0) {
-        const { data: cmlData } = await sb
-          .from('cml_points')
-          .select('equipment_id, id')
-          .eq('company_id', companyId)
-          .eq('is_active', true)
-          .limit(5000)
-
-        if (cmlData) {
-          const cmlRows = cmlData as { equipment_id: string; id: string }[]
-          cmlCounts = cmlRows.reduce<Record<string, number>>((acc, cml) => {
-            acc[cml.equipment_id] = (acc[cml.equipment_id] || 0) + 1
-            return acc
-          }, {} as Record<string, number>)
+        // Batch fetch CMLs
+        let allCmls: {equipment_id: string, id: string}[] = []
+        let cmlOffset = 0
+        while (true) {
+          const { data: batch } = await sb
+            .from('cml_points')
+            .select('equipment_id, id')
+            .eq('company_id', companyId)
+            .eq('is_active', true)
+            .range(cmlOffset, cmlOffset + 999)
+          if (!batch || batch.length === 0) break
+          allCmls = [...allCmls, ...batch]
+          if (batch.length < 1000) break
+          cmlOffset += 1000
         }
+        cmlCounts = allCmls.reduce<Record<string, number>>((acc, cml) => {
+          acc[cml.equipment_id] = (acc[cml.equipment_id] || 0) + 1
+          return acc
+        }, {})
 
-        const { data: readingData } = await sb
-          .from('thickness_readings')
-          .select('reading_date, cml_point_id, cml_points(equipment_id)')
-          .eq('company_id', companyId)
-          .order('reading_date', { ascending: false })
-          .limit(5000)
-
-        if (readingData) {
-          const readings = readingData as {
-            reading_date: string
-            cml_point: { equipment_id: string } | null
-          }[]
-          const seen = new Set<string>()
-          for (const r of readings) {
-            const eqId = (r as any).cml_points?.equipment_id
-            if (eqId && !seen.has(eqId)) {
-              seen.add(eqId)
-              latestReadings[eqId] = r.reading_date
-            }
+        // Batch fetch latest readings
+        let allReadings: {reading_date: string, cml_point_id: string, cml_points: {equipment_id: string} | null}[] = []
+        let rdOffset = 0
+        while (true) {
+          const { data: batch } = await (sb as any)
+            .from('thickness_readings')
+            .select('reading_date, cml_point_id, cml_points(equipment_id)')
+            .eq('company_id', companyId)
+            .order('reading_date', { ascending: false })
+            .range(rdOffset, rdOffset + 999)
+          if (!batch || batch.length === 0) break
+          allReadings = [...allReadings, ...batch]
+          if (batch.length < 1000) break
+          rdOffset += 1000
+        }
+        const seen = new Set<string>()
+        for (const r of allReadings) {
+          const eqId = (r as any).cml_points?.equipment_id
+          if (eqId && !seen.has(eqId)) {
+            seen.add(eqId)
+            latestReadings[eqId] = r.reading_date
           }
         }
       }
