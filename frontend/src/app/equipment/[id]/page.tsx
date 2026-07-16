@@ -37,6 +37,7 @@ import {
   RefreshCw,
   TrendingDown,
   Plus,
+  BarChart2,
 } from 'lucide-react'
 
 type Equipment = Database['public']['Tables']['equipment']['Row']
@@ -109,7 +110,7 @@ const INSPECTION_STATUS_COLORS: Record<string, string> = {
   rejected: 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400',
 }
 
-type Tab = 'details' | 'circuits' | 'inspections' | 'readings' | 'damage_mechanisms' | 'trends'
+type Tab = 'details' | 'circuits' | 'inspections' | 'readings' | 'damage_mechanisms'
 
 interface EquipmentDetailData {
   equipment: Equipment
@@ -141,10 +142,6 @@ export default function EquipmentDetailPage() {
   const [dmValidation, setDmValidation] = useState<any | null>(null)
   const [dmValidationLoading, setDmValidationLoading] = useState(false)
   const [dmKnowledgeBase, setDmKnowledgeBase] = useState<any[]>([])
-  const [selectedCML, setSelectedCML] = useState<string | null>(null)
-  const [trendReadings, setTrendReadings] = useState<any[]>([])
-  const [trendLoading, setTrendLoading] = useState(false)
-  const [allCMLs, setAllCMLs] = useState<any[]>([])
 
   const canEditTRequired = userRole === 'engineer' || userRole === 'supervisor' || userRole === 'super_admin'
 
@@ -440,22 +437,6 @@ export default function EquipmentDetailPage() {
     }
   }, [supabase])
 
-  const loadTrendData = useCallback(async (cmlId: string) => {
-    setTrendLoading(true)
-    try {
-      const { data } = await supabase
-        .from('thickness_readings')
-        .select('reading_mm, reading_date, is_representative')
-        .eq('cml_point_id', cmlId)
-        .order('reading_date')
-      setTrendReadings(data || [])
-    } catch (err) {
-      console.error('loadTrendData error:', err)
-    } finally {
-      setTrendLoading(false)
-    }
-  }, [supabase])
-
   // Load DM knowledge base for name lookups
   useEffect(() => {
     sb.from('dm_knowledge_base').select('dm_code, dm_name').then(({ data }: any) => {
@@ -467,89 +448,8 @@ export default function EquipmentDetailPage() {
     fetchData()
   }, [fetchData])
 
-  // Load CML list when Trends tab is active
-  useEffect(() => {
-    if (activeTab !== 'trends') return
-    async function loadCMLs() {
-      const { data } = await sb
-        .from('cml_points')
-        .select('id, location_label, nominal_thickness, t_required_manual')
-        .eq('equipment_id', id)
-        .order('location_label')
-      setAllCMLs(data || [])
-      if (data && data.length > 0 && !selectedCML) {
-        setSelectedCML(data[0].id)
-        loadTrendData(data[0].id)
-      }
-    }
-    loadCMLs()
-  }, [activeTab, id, sb, selectedCML, loadTrendData])
-
-  // Plotly chart render
-  useEffect(() => {
-    if (activeTab !== 'trends' || !trendReadings.length || !selectedCML) return
-    const cml = allCMLs.find(c => c.id === selectedCML)
-    if (!cml) return
-
-    const win = window as any
-    if (!win.Plotly) {
-      const s = document.createElement('script')
-      s.src = 'https://cdn.plot.ly/plotly-2.35.2.min.js'
-      s.onload = () => renderTrendChart(cml)
-      document.head.appendChild(s)
-    } else {
-      renderTrendChart(cml)
-    }
-
-    function renderTrendChart(cml: any) {
-      const Plotly = (window as any).Plotly
-      const years = trendReadings.map(r => r.reading_date)
-      const thicknesses = trendReadings.map(r => Number(r.reading_mm))
-
-      const actual = {
-        x: years, y: thicknesses,
-        mode: 'lines+markers', type: 'scatter', name: 'Actual',
-        line: { color: '#4F6EF7', width: 2 },
-        marker: { color: '#4F6EF7', size: 8 },
-      }
-
-      const traces: any[] = [actual]
-
-      // t_required_manual line
-      if (cml.t_required_manual) {
-        traces.push({
-          x: [years[0], years[years.length - 1]],
-          y: [cml.t_required_manual, cml.t_required_manual],
-          mode: 'lines', type: 'scatter', name: 't_required',
-          line: { color: '#EF4444', dash: 'dash', width: 1.5 },
-        })
-      }
-
-      // Nominal line
-      if (cml.nominal_thickness) {
-        traces.push({
-          x: [years[0], years[years.length - 1]],
-          y: [cml.nominal_thickness, cml.nominal_thickness],
-          mode: 'lines', type: 'scatter', name: 'Nominal',
-          line: { color: '#22C55E', dash: 'dot', width: 1.5 },
-        })
-      }
-
-      Plotly.newPlot('cml-trend-chart', traces, {
-        title: `Thickness Trend — ${cml.location_label}`,
-        xaxis: { title: 'Date', gridcolor: '#F1F5F9' },
-        yaxis: { title: 'Thickness (mm)', gridcolor: '#F1F5F9' },
-        paper_bgcolor: 'transparent',
-        plot_bgcolor: 'transparent',
-        font: { size: 11, color: '#64748B' },
-        margin: { t: 48, r: 20, b: 60, l: 60 },
-        legend: { orientation: 'h', y: -0.2 },
-      }, { responsive: true, displayModeBar: false })
-    }
-  }, [activeTab, trendReadings, selectedCML, allCMLs])
-
-  // Run DM calculation when equipment data is loaded
-  useEffect(() => {
+    // Run DM calculation when equipment data is loaded
+    useEffect(() => {
     if (data?.equipment) {
       fetchDmResults(data.equipment)
       fetchDmValidation(data.equipment.id)
@@ -604,7 +504,6 @@ export default function EquipmentDetailPage() {
       badge: readings.length,
     },
     { key: 'damage_mechanisms', label: 'Damage Mechanisms', icon: <FlaskConical className="h-4 w-4" /> },
-    { key: 'trends', label: 'Trends', icon: <TrendingDown className="h-4 w-4" /> },
   ]
 
   const renderDetailsTab = () => (
@@ -649,6 +548,18 @@ export default function EquipmentDetailPage() {
             </span>
           </div>
         </div>
+      </div>
+
+      {/* Link to Thickness Analytics */}
+      <div className="rounded-xl border border-border/70 p-4 bg-muted/30">
+        <p className="text-sm text-muted-foreground mb-2">View thickness trends, corrosion rates, and remaining life projections for this equipment across all CMLs.</p>
+        <a
+          href={`/thickness-analytics?equipment=${equipment.id}`}
+          className="inline-flex items-center gap-2 text-sm font-medium text-primary hover:text-primary/80 transition-colors"
+        >
+          <BarChart2 className="h-4 w-4" />
+          View Thickness Trends → Thickness Analytics
+        </a>
       </div>
 
       {/* Detail fields grid */}
@@ -1416,74 +1327,6 @@ export default function EquipmentDetailPage() {
         {activeTab === 'inspections' && renderInspectionsTab()}
         {activeTab === 'readings' && renderReadingsTab()}
         {activeTab === 'damage_mechanisms' && renderDamageMechanismsTab()}
-        {activeTab === 'trends' && (
-          <div className="space-y-4">
-            <div className="flex items-center gap-3">
-              <label className="text-sm font-medium text-foreground">Select CML:</label>
-              <select
-                value={selectedCML || ''}
-                onChange={(e) => {
-                  setSelectedCML(e.target.value)
-                  loadTrendData(e.target.value)
-                }}
-                className="px-3 py-1.5 text-sm border border-border rounded-lg bg-background focus:outline-none focus:ring-2 focus:ring-primary/50"
-              >
-                {allCMLs.map(cml => (
-                  <option key={cml.id} value={cml.id}>{cml.location_label}</option>
-                ))}
-              </select>
-            </div>
-
-            <div className="bg-card border border-border rounded-xl p-4 shadow-sm">
-              {trendLoading ? (
-                <div className="flex items-center justify-center h-64">
-                  <Loader2 className="h-6 w-6 animate-spin text-primary" />
-                </div>
-              ) : trendReadings.length === 0 ? (
-                <div className="flex items-center justify-center h-64 text-muted-foreground text-sm">
-                  No thickness readings found for this CML.
-                </div>
-              ) : (
-                <div id="cml-trend-chart" style={{ height: '350px' }} />
-              )}
-            </div>
-
-            {selectedCML && allCMLs.find(c => c.id === selectedCML) && (
-              <div className="grid grid-cols-3 gap-3">
-                {(() => {
-                  const cml = allCMLs.find(c => c.id === selectedCML)!
-                  const lastReading = trendReadings[trendReadings.length - 1]
-                  const firstReading = trendReadings[0]
-                  const years = trendReadings.length > 1
-                    ? (new Date(lastReading.reading_date).getFullYear() - new Date(firstReading.reading_date).getFullYear()) || 1
-                    : 1
-                  const cr = trendReadings.length > 1
-                    ? ((Number(firstReading.reading_mm) - Number(lastReading.reading_mm)) / years).toFixed(3)
-                    : '—'
-                  const rl = cml.t_required_manual && lastReading
-                    ? Math.max((Number(lastReading.reading_mm) - cml.t_required_manual) / (Number(cr) || 0.001), 0).toFixed(1)
-                    : '—'
-                  return (
-                    <>
-                      <div className="bg-card border border-border rounded-xl p-3 shadow-sm text-center">
-                        <p className="text-xs text-muted-foreground">Current Thickness</p>
-                        <p className="text-xl font-bold text-foreground mt-1">{lastReading ? Number(lastReading.reading_mm).toFixed(2) : '—'} mm</p>
-                      </div>
-                      <div className="bg-card border border-border rounded-xl p-3 shadow-sm text-center">
-                        <p className="text-xs text-muted-foreground">Corrosion Rate</p>
-                        <p className="text-xl font-bold text-primary mt-1">{cr} mm/yr</p>
-                      </div>
-                      <div className="bg-card border border-border rounded-xl p-3 shadow-sm text-center">
-                        <p className="text-xs text-muted-foreground">Est. Remaining Life</p>
-                        <p className="text-xl font-bold mt-1" style={{color: Number(rl) < 2 ? '#EF4444' : Number(rl) < 5 ? '#F59E0B' : '#22C55E'}}>{rl} yr</p>
-                      </div>
-                    </>
-                  )
-                })()}
-              </div>
-            )}
-          </div>
-        )}
       </div>
     </AppLayout>
   )
