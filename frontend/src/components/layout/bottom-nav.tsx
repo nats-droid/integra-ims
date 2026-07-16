@@ -6,7 +6,7 @@ import { useState } from 'react'
 import {
   LayoutDashboard, ClipboardList, Wrench,
   Shield, Grid3x3, X, ChevronRight,
-  Brain, BarChart3, CalendarCheck, FlaskConical,
+  Brain, BarChart3, BarChart2, CalendarCheck, FlaskConical,
   FileText, Settings, Layers, Activity, Pipette, MapPin,
 } from 'lucide-react'
 import { cn } from '@/utils/cn'
@@ -23,6 +23,7 @@ const MORE_ITEMS = [
   { href: '/campaigns', label: 'Campaigns', icon: FlaskConical },
   { href: '/ai-insight', label: 'AI Insight', icon: Brain },
   { href: '/ml-analytics', label: 'ML Analytics', icon: BarChart3 },
+  { href: '/thickness-analytics', label: 'Thickness', icon: BarChart2 },
   { href: '/reports', label: 'Reports', icon: FileText },
   { href: '/settings', label: 'Settings', icon: Settings },
   {

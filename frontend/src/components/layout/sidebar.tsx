@@ -7,7 +7,7 @@ import { createClient } from '@/lib/supabase/client'
 import {
   LayoutDashboard, Wrench, ClipboardList, CalendarCheck,
   FlaskConical, FileText, Settings, Activity, Gauge,
-  Pipette, Layers, BarChart3, Brain, ChevronDown,
+  Pipette, Layers, BarChart3, BarChart2, Brain, ChevronDown,
   ChevronRight, LogOut, User, MapPin, Shield,
 } from 'lucide-react'
 import { cn } from '@/utils/cn'
@@ -29,6 +29,7 @@ const NAV = [
   { href: '/dm-screener', label: 'DM Screener', icon: Shield, color: 'text-amber-500' },
   { href: '/ai-insight', label: 'AI Insight', icon: Brain, color: 'text-purple-500' },
   { href: '/ml-analytics', label: 'ML Analytics', icon: BarChart3, color: 'text-blue-500' },
+  { href: '/thickness-analytics', label: 'Thickness Analytics', icon: BarChart2, color: 'text-cyan-500' },
   { href: '/reports', label: 'Reports', icon: FileText, color: 'text-slate-500' },
   { href: '/settings', label: 'Settings', icon: Settings, color: 'text-slate-500' },
 ]
