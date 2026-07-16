@@ -816,9 +816,10 @@ export default function DashboardPage() {
         // 1. Fetch all RL predictions (latest per CML)
         const { data: rlRows } = await (supabase as any)
           .from('rl_predictions')
-          .select('id, cml_point_id, confidence_low, confidence_high, predicted_rl_years, computed_at')
+          .select('id, cml_point_id, confidence_low, confidence_high, predicted_rl_years, computed_at, cml_points(id, location_label, equipment_id)')
           .eq('company_id', companyId)
           .order('computed_at', { ascending: false })
+          .limit(5000)
 
         // 2. Fetch all equipment + plant areas
         const { data: allEquips } = await (supabase as any)
@@ -826,15 +827,12 @@ export default function DashboardPage() {
           .select('id, tag, type, area_id, plant_areas(name)')
           .eq('company_id', companyId)
 
-        // 3. Fetch CML points
-        const cmlIds = [...new Set((rlRows || []).map((r: any) => r.cml_point_id).filter(Boolean))]
-        const { data: cmls } = cmlIds.length > 0
-          ? await (supabase as any).from('cml_points').select('id, location_label, equipment_id').in('id', cmlIds)
-          : { data: [] }
-
+        // 3. Build cmlMap from joined data
         const cmlMap: Record<string, any> = {}
-        for (const c of cmls || []) {
-          cmlMap[c.id] = c
+        for (const r of rlRows || []) {
+          if (r.cml_points) {
+            cmlMap[r.cml_point_id] = r.cml_points
+          }
         }
 
         // 4. Deduplicate RL rows per CML (latest computed_at)
