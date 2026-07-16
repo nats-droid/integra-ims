@@ -10,6 +10,8 @@ import { toast } from 'sonner'
 import {
   Search,
   Plus,
+  Download,
+  Upload,
   ChevronRight,
   X,
   Wrench,
@@ -20,6 +22,7 @@ import {
   Gauge,
   Box,
 } from 'lucide-react'
+import { exportEquipmentExcel } from '@/lib/excel'
 
 type Equipment = Database['public']['Tables']['equipment']['Row']
 type PlantArea = Database['public']['Tables']['plant_areas']['Row']
@@ -65,6 +68,9 @@ export default function EquipmentListPage() {
   const [search, setSearch] = useState('')
   const [typeFilter, setTypeFilter] = useState('')
   const [riskFilter, setRiskFilter] = useState('')
+  const [exporting, setExporting] = useState(false)
+  const [importing, setImporting] = useState(false)
+  const [importResult, setImportResult] = useState<{ success: number; errors: string[] } | null>(null)
 
   const fetchEquipment = useCallback(async () => {
     try {
@@ -223,6 +229,123 @@ export default function EquipmentListPage() {
     setRiskFilter('')
   }
 
+  const handleExport = async () => {
+    setExporting(true)
+    try {
+      const { data: { user } } = await supabase.auth.getUser()
+      if (!user) throw new Error('Not authenticated')
+      const { data: appUser } = await sb
+        .from('app_users')
+        .select('company_id')
+        .eq('auth_user_id', user.id)
+        .single()
+      const companyId = (appUser as { company_id: string } | null)?.company_id
+      if (!companyId) throw new Error('Company ID not found')
+
+      const { data: eqData } = await supabase
+        .from('equipment')
+        .select('tag, type, area_id, fluid_service, material, design_pressure, design_temp_max, installation_date, insulation_type, notes, plant_areas(name)')
+        .eq('company_id', companyId)
+        .order('tag')
+
+      const { data: cmlData } = await supabase
+        .from('cml_points')
+        .select('location_label, nominal_thickness, t_required_manual, t_min, cml_type, equipment(tag)')
+        .eq('company_id', companyId)
+        .order('equipment_id')
+
+      const eqRows = (eqData || []).map((e: any) => ({
+        tag: e.tag,
+        type: e.type,
+        area_name: e.plant_areas?.name || '',
+        fluid_service: e.fluid_service || '',
+        material: e.material || '',
+        design_pressure: e.design_pressure,
+        design_temp_max: e.design_temp_max,
+        installation_date: e.installation_date,
+        insulation_type: e.insulation_type || '',
+        notes: e.notes || '',
+      }))
+
+      const cmlRows = (cmlData || []).map((c: any) => ({
+        equipment_tag: c.equipment?.tag || '',
+        location_label: c.location_label,
+        nominal_thickness: c.nominal_thickness,
+        t_required_manual: c.t_required_manual,
+        t_min: c.t_min,
+        cml_type: c.cml_type || '',
+      }))
+
+      exportEquipmentExcel(eqRows, cmlRows)
+      toast.success('Export successful')
+    } catch (err) {
+      toast.error('Export failed')
+    } finally {
+      setExporting(false)
+    }
+  }
+
+  const handleImport = async (file: File) => {
+    setImporting(true); setImportResult(null)
+    try {
+      const { data: { user } } = await supabase.auth.getUser()
+      if (!user) throw new Error('Not authenticated')
+      const { data: appUser } = await sb
+        .from('app_users')
+        .select('company_id')
+        .eq('auth_user_id', user.id)
+        .single()
+      const companyId = (appUser as { company_id: string } | null)?.company_id
+      if (!companyId) throw new Error('No company ID')
+
+      const { parseImportExcel } = await import('@/lib/excel')
+      const { equipment, cmls } = await parseImportExcel(file)
+      let success = 0; const errors: string[] = []
+
+      for (const eq of equipment) {
+        try {
+          const { data: area } = await sb.from('plant_areas').select('id').eq('company_id', companyId).eq('name', eq.area_name).single()
+          await sb.from('equipment').upsert({
+            company_id: companyId,
+            tag: eq.tag,
+            type: eq.type,
+            area_id: area?.id || null,
+            fluid_service: eq.fluid_service || null,
+            material: eq.material || null,
+            design_pressure: eq.design_pressure ? Number(eq.design_pressure) : null,
+            design_temp_max: eq.design_temp_max ? Number(eq.design_temp_max) : null,
+            installation_date: eq.installation_date || null,
+            insulation_type: eq.insulation_type || null,
+            notes: eq.notes || null,
+            is_active: true,
+          }, { onConflict: 'company_id,tag' })
+          success++
+        } catch (e: any) { errors.push(`Eq ${eq.tag}: ${e.message}`) }
+      }
+
+      for (const cml of cmls) {
+        try {
+          const { data: eq } = await sb.from('equipment').select('id').eq('company_id', companyId).eq('tag', cml.equipment_tag).single()
+          if (!eq) { errors.push(`CML ${cml.location_label}: no eq`); continue }
+          await sb.from('cml_points').upsert({
+            company_id: companyId,
+            equipment_id: eq.id,
+            location_label: cml.location_label,
+            nominal_thickness: Number(cml.nominal_thickness),
+            t_required_manual: cml.t_required_manual ? Number(cml.t_required_manual) : null,
+            t_min: cml.t_min ? Number(cml.t_min) : null,
+            cml_type: cml.cml_type || 'standard',
+            is_active: true,
+          }, { onConflict: 'company_id,equipment_id,location_label' })
+          success++
+        } catch (e: any) { errors.push(`CML ${cml.location_label}: ${e.message}`) }
+      }
+      setImportResult({ success, errors })
+      errors.length === 0 ? toast.success(`Imported: ${success}`) : toast.warning(`Sukses: ${success}, Error: ${errors.length}`)
+      fetchEquipment()
+    } catch (err: any) { toast.error(`Error: ${err.message}`) } finally { setImporting(false) }
+  }
+
   const hasActiveFilters = search || typeFilter || riskFilter
 
   return (
@@ -236,14 +359,33 @@ export default function EquipmentListPage() {
               Manage your plant equipment and inspection data
             </p>
           </div>
-          <button
-            onClick={() => router.push('/equipment/new')}
-            className="inline-flex items-center gap-2 rounded-lg bg-primary px-4 py-2 text-sm font-medium text-primary-foreground hover:bg-primary/90 transition-colors"
-          >
-            <Plus className="h-4 w-4" />
-            Add Equipment
-          </button>
+          <div className="flex items-center gap-2">
+            <button onClick={handleExport} disabled={exporting} className="inline-flex items-center gap-2 px-4 py-2 border rounded-lg text-sm hover:bg-muted disabled:opacity-50">
+              <Download className="w-4 h-4" />{exporting ? '...' : 'Export'}
+            </button>
+            <label className="inline-flex items-center gap-2 px-4 py-2 border rounded-lg text-sm hover:bg-muted cursor-pointer">
+              <Upload className="w-4 h-4" />{importing ? '...' : 'Import'}
+              <input type="file" accept=".xlsx,.xls" className="hidden" onChange={(e) => e.target.files?.[0] && handleImport(e.target.files[0])} />
+            </label>
+            <button
+              onClick={() => router.push('/equipment/new')}
+              className="inline-flex items-center gap-2 rounded-lg bg-primary px-4 py-2 text-sm font-medium text-primary-foreground hover:bg-primary/90 transition-colors"
+            >
+              <Plus className="h-4 w-4" />
+              Add Equipment
+            </button>
+          </div>
         </div>
+
+        {importResult?.errors.length ? (
+          <div className="p-4 bg-red-50 border border-red-200 rounded-xl text-xs text-red-600">
+            <p className="font-medium text-red-700 mb-2">Errors:</p>
+            <ul className="list-disc pl-4 space-y-1">
+              {importResult.errors.slice(0,5).map((e,i)=><li key={i}>{e}</li>)}
+              {importResult.errors.length>5 && <li>...+{importResult.errors.length-5} more</li>}
+            </ul>
+          </div>
+        ) : null}
 
         {/* Filters */}
         <div className="flex flex-wrap items-center gap-3">
