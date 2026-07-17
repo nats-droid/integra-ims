@@ -174,6 +174,7 @@ export default function InspectionDetailPage({
   const [pdfGenerating, setPdfGenerating] = useState(false)
   const [actionLoading, setActionLoading] = useState(false)
   const [photos, setPhotos] = useState<any[]>([])
+  const [lightbox, setLightbox] = useState<string | null>(null)
   const [pdfPhotos, setPdfPhotos] = useState<{base64: string; caption: string}[]>([])
 
   // =========================================================================
@@ -577,7 +578,29 @@ export default function InspectionDetailPage({
                   )}
                   Reject
                 </button>
-              </>
+              {lightbox && (
+        <div
+          className="fixed inset-0 z-50 bg-black/90 flex items-center justify-center p-4"
+          onClick={() => setLightbox(null)}
+        >
+          <div className="relative max-w-4xl max-h-full">
+            <button
+              onClick={() => setLightbox(null)}
+              className="absolute -top-10 right-0 text-white text-sm hover:text-gray-300"
+            >
+              ✕ Close
+            </button>
+            <img
+              src={lightbox}
+              alt="Full size"
+              className="max-w-full max-h-[85vh] object-contain rounded-lg"
+              onClick={e => e.stopPropagation()}
+            />
+          </div>
+        </div>
+      )}
+
+      </>
             )}
             {canGeneratePDF && (
               <button
