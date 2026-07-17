@@ -1016,7 +1016,7 @@ export default function InspectionDetailPage({
                 style={{
                   width: '100%',
                   borderCollapse: 'collapse',
-                  fontSize: '11px',
+                  fontSize: '9px',
                 }}
               >
                 <thead>
@@ -1024,7 +1024,7 @@ export default function InspectionDetailPage({
                     <th
                       style={{
                         border: '1px solid #e2e8f0',
-                        padding: '6px 8px',
+                        padding: '4px 6px',
                         textAlign: 'left',
                       }}
                     >
@@ -1033,7 +1033,7 @@ export default function InspectionDetailPage({
                     <th
                       style={{
                         border: '1px solid #e2e8f0',
-                        padding: '6px 8px',
+                        padding: '4px 6px',
                         textAlign: 'right',
                       }}
                     >
@@ -1042,7 +1042,7 @@ export default function InspectionDetailPage({
                     <th
                       style={{
                         border: '1px solid #e2e8f0',
-                        padding: '6px 8px',
+                        padding: '4px 6px',
                         textAlign: 'right',
                       }}
                     >
@@ -1051,7 +1051,7 @@ export default function InspectionDetailPage({
                     <th
                       style={{
                         border: '1px solid #e2e8f0',
-                        padding: '6px 8px',
+                        padding: '4px 6px',
                         textAlign: 'right',
                       }}
                     >
@@ -1060,7 +1060,7 @@ export default function InspectionDetailPage({
                     <th
                       style={{
                         border: '1px solid #e2e8f0',
-                        padding: '6px 8px',
+                        padding: '4px 6px',
                         textAlign: 'left',
                       }}
                     >
@@ -1080,7 +1080,7 @@ export default function InspectionDetailPage({
                       <td
                         style={{
                           border: '1px solid #e2e8f0',
-                          padding: '6px 8px',
+                          padding: '4px 6px',
                         }}
                       >
                         {row.cml_location}
@@ -1088,7 +1088,7 @@ export default function InspectionDetailPage({
                       <td
                         style={{
                           border: '1px solid #e2e8f0',
-                          padding: '6px 8px',
+                          padding: '4px 6px',
                           textAlign: 'right',
                         }}
                       >
@@ -1097,7 +1097,7 @@ export default function InspectionDetailPage({
                       <td
                         style={{
                           border: '1px solid #e2e8f0',
-                          padding: '6px 8px',
+                          padding: '4px 6px',
                           textAlign: 'right',
                         }}
                       >
@@ -1106,7 +1106,7 @@ export default function InspectionDetailPage({
                       <td
                         style={{
                           border: '1px solid #e2e8f0',
-                          padding: '6px 8px',
+                          padding: '4px 6px',
                           textAlign: 'right',
                         }}
                       >
@@ -1117,7 +1117,7 @@ export default function InspectionDetailPage({
                       <td
                         style={{
                           border: '1px solid #e2e8f0',
-                          padding: '6px 8px',
+                          padding: '4px 6px',
                         }}
                       >
                         {formatDate(row.reading_date)}
@@ -1134,10 +1134,10 @@ export default function InspectionDetailPage({
               <h2 style={{ background: '#334155', color: '#ffffff', padding: '8px 12px', fontSize: '14px', fontWeight: '600', margin: '0 0 12px 0' }}>
                 INSPECTION PHOTOS
               </h2>
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '8px' }}>
                 {pdfPhotos.filter(p => p.base64).map((p, i) => (
                   <div key={i} style={{ border: '1px solid #e2e8f0', borderRadius: '4px', overflow: 'hidden' }}>
-                    <img src={p.base64} alt={p.caption} style={{ width: '100%', height: '200px', objectFit: 'cover' }} />
+                    <img src={p.base64} alt={p.caption} style={{ width: '100%', height: '150px', objectFit: 'cover' }} />
                     {p.caption && <p style={{ margin: '4px 8px', fontSize: '10px', color: '#64748b' }}>{p.caption}</p>}
                   </div>
                 ))}
