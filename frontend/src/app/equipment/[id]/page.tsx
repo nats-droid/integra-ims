@@ -554,7 +554,7 @@ export default function EquipmentDetailPage() {
       <div className="rounded-xl border border-border/70 p-4 bg-muted/30">
         <p className="text-sm text-muted-foreground mb-2">View thickness trends, corrosion rates, and remaining life projections for this equipment across all CMLs.</p>
         <a
-          href={`/thickness-analytics?equipment=${equipment.id}`}
+          href={`/thickness-analytics?tag=${equipment?.tag || ''}`}
           className="inline-flex items-center gap-2 text-sm font-medium text-primary hover:text-primary/80 transition-colors"
         >
           <BarChart2 className="h-4 w-4" />
