@@ -174,6 +174,7 @@ export default function InspectionDetailPage({
   const [pdfGenerating, setPdfGenerating] = useState(false)
   const [actionLoading, setActionLoading] = useState(false)
   const [photos, setPhotos] = useState<any[]>([])
+  const [pdfPhotos, setPdfPhotos] = useState<{base64: string; caption: string}[]>([])
 
   // =========================================================================
   // Fetch all data
@@ -398,10 +399,35 @@ export default function InspectionDetailPage({
   // Generate PDF
   // =========================================================================
 
+  const toBase64 = async (url: string): Promise<string> => {
+    try {
+      const res = await fetch(url)
+      const blob = await res.blob()
+      return new Promise((resolve, reject) => {
+        const reader = new FileReader()
+        reader.onloadend = () => resolve(reader.result as string)
+        reader.onerror = reject
+        reader.readAsDataURL(blob)
+      })
+    } catch {
+      return ''
+    }
+  }
+
   const handleGeneratePDF = async () => {
     if (!inspection || !equipment) return
     setPdfGenerating(true)
     try {
+      // Convert photos to base64
+      const base64Photos = await Promise.all(
+        photos.map(async (p) => ({
+          base64: await toBase64(p.signedUrl),
+          caption: p.caption || '',
+        }))
+      )
+      setPdfPhotos(base64Photos)
+      await new Promise(r => setTimeout(r, 500)) // wait for re-render
+
       const el = document.getElementById('pdf-content')
       if (!el) {
         toast.error('PDF template not found')
@@ -418,13 +444,13 @@ export default function InspectionDetailPage({
       await new Promise((r) => setTimeout(r, 100))
 
       const canvas = await html2canvas(el, {
-        scale: 2,
+        scale: 1.5,
         useCORS: true,
         backgroundColor: '#ffffff',
       })
 
       const pdf = new jsPDF('p', 'mm', 'a4')
-      const imgData = canvas.toDataURL('image/png')
+      const imgData = canvas.toDataURL('image/jpeg', 0.85)
       const pdfWidth = 210
       const pdfHeight = (canvas.height * pdfWidth) / canvas.width
 
@@ -1100,6 +1126,22 @@ export default function InspectionDetailPage({
                   ))}
                 </tbody>
               </table>
+            </div>
+          )}
+
+          {pdfPhotos.length > 0 && (
+            <div style={{ padding: '16px 32px' }}>
+              <h2 style={{ background: '#334155', color: '#ffffff', padding: '8px 12px', fontSize: '14px', fontWeight: '600', margin: '0 0 12px 0' }}>
+                INSPECTION PHOTOS
+              </h2>
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
+                {pdfPhotos.filter(p => p.base64).map((p, i) => (
+                  <div key={i} style={{ border: '1px solid #e2e8f0', borderRadius: '4px', overflow: 'hidden' }}>
+                    <img src={p.base64} alt={p.caption} style={{ width: '100%', height: '200px', objectFit: 'cover' }} />
+                    {p.caption && <p style={{ margin: '4px 8px', fontSize: '10px', color: '#64748b' }}>{p.caption}</p>}
+                  </div>
+                ))}
+              </div>
             </div>
           )}
 
