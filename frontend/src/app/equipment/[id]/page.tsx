@@ -865,7 +865,7 @@ export default function EquipmentDetailPage() {
             </thead>
             <tbody>
               {inspections.map((insp) => (
-                <tr key={insp.id} className="border-b border-border last:border-0">
+                <tr key={insp.id} className="border-b border-border last:border-0 cursor-pointer hover:bg-muted/50 transition-colors" onClick={() => router.push(`/inspections/${insp.id}`)}>
                   <td className="px-6 py-3.5">
                     {new Date(insp.event_date).toLocaleDateString()}
                   </td>
