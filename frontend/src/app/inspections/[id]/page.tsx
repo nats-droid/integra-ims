@@ -16,6 +16,7 @@ import {
   Camera,
 } from 'lucide-react'
 import { getEventPhotos } from '@/utils/photos'
+import PhotoAnnotator from '@/components/PhotoAnnotator'
 import jsPDF from 'jspdf'
 import html2canvas from 'html2canvas'
 
@@ -175,6 +176,7 @@ export default function InspectionDetailPage({
   const [actionLoading, setActionLoading] = useState(false)
   const [photos, setPhotos] = useState<any[]>([])
   const [lightbox, setLightbox] = useState<string | null>(null)
+  const [annotatingPhoto, setAnnotatingPhoto] = useState<{url: string; id: string; annotation: any} | null>(null)
   const [pdfPhotos, setPdfPhotos] = useState<{base64: string; caption: string}[]>([])
 
   // =========================================================================
@@ -400,6 +402,20 @@ export default function InspectionDetailPage({
   // Generate PDF
   // =========================================================================
 
+  const saveAnnotation = async (photoId: string, annotationJson: any, croppedUrl?: string) => {
+    try {
+      const updateData: any = { annotation_json: annotationJson }
+      if (croppedUrl) updateData.cropped_url = croppedUrl
+      const sb = supabase as any
+      await sb.from('photos').update(updateData).eq('id', photoId)
+      setPhotos(prev => prev.map(p => p.id === photoId ? { ...p, annotation_json: annotationJson, cropped_url: croppedUrl || p.cropped_url } : p))
+      setAnnotatingPhoto(null)
+      toast.success('Annotation saved')
+    } catch {
+      toast.error('Failed to save annotation')
+    }
+  }
+
   const toBase64 = async (url: string): Promise<string> => {
     try {
       const res = await fetch(url)
@@ -578,7 +594,16 @@ export default function InspectionDetailPage({
                   )}
                   Reject
                 </button>
-              {lightbox && (
+              {annotatingPhoto && (
+        <PhotoAnnotator
+          photoUrl={annotatingPhoto.url}
+          annotationJson={annotatingPhoto.annotation}
+          onSave={(json, url) => saveAnnotation(annotatingPhoto.id, json, url)}
+          onClose={() => setAnnotatingPhoto(null)}
+        />
+      )}
+
+      {lightbox && (
         <div
           className="fixed inset-0 z-50 bg-black/90 flex items-center justify-center p-4"
           onClick={() => setLightbox(null)}
