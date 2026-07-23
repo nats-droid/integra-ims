@@ -8,7 +8,7 @@ import {
   LayoutDashboard, Wrench, ClipboardList, CalendarCheck,
   FlaskConical, FileText, Settings, Activity, Gauge,
   Pipette, Layers, BarChart3, BarChart2, Brain, ChevronDown,
-  ChevronRight, LogOut, User, MapPin, Shield,
+  ChevronRight, LogOut, User, MapPin, Shield, ClipboardCheck,
 } from 'lucide-react'
 import { cn } from '@/utils/cn'
 
@@ -26,6 +26,7 @@ const NAV = [
   { href: '/inspections', label: 'Inspections', icon: ClipboardList, color: 'text-sky-500' },
   { href: '/plans', label: 'Inspection Plans', icon: CalendarCheck, color: 'text-cyan-500' },
   { href: '/campaigns', label: 'Campaigns', icon: FlaskConical, color: 'text-teal-500' },
+  { href: '/checklist-builder', label: 'Checklist Builder', icon: ClipboardCheck, color: 'text-indigo-500', roles: ['supervisor', 'super_admin'] },
   { href: '/dm-screener', label: 'DM Screener', icon: Shield, color: 'text-amber-500' },
   { href: '/ai-insight', label: 'AI Insight', icon: Brain, color: 'text-purple-500' },
   { href: '/ml-analytics', label: 'ML Analytics', icon: BarChart3, color: 'text-blue-500' },
@@ -82,6 +83,9 @@ export default function Sidebar({ onClose }: { onClose?: () => void }) {
       {/* Nav */}
       <nav className="flex-1 overflow-y-auto px-3 py-4 space-y-0.5">
         {NAV.map((item) => {
+          if ('roles' in item && item.roles && user && !item.roles.includes(user.role)) {
+            return null
+          }
           if ('children' in item) {
             const childActive = item.children!.some(c => isActive(c.href))
             const open = masterOpen || childActive
