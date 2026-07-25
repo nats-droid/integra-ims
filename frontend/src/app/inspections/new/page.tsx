@@ -36,7 +36,8 @@ type AppUserRow = Database['public']['Tables']['app_users']['Row']
 
 interface ChecklistAnswer {
   item_code: string
-  answer_rating: number | null
+  answer_rating: string | null
+  answer_text: string
   notes: string
 }
 
@@ -373,6 +374,7 @@ function InspectionsNewPageInner() {
           .from('checklist_templates')
           .select('*')
           .eq('equipment_type', equipment.type)
+          .eq('inspection_scope', 'general')
           .eq('is_active', true)
           .order('display_order', { ascending: true })
 
@@ -386,6 +388,7 @@ function InspectionsNewPageInner() {
             answers[item.item_code] = {
               item_code: item.item_code,
               answer_rating: null,
+              answer_text: '',
               notes: '',
             }
           })
@@ -514,7 +517,11 @@ function InspectionsNewPageInner() {
   }
 
   function countRated(): number {
-    return Object.values(checklistAnswers).filter((a) => a.answer_rating !== null).length
+    return Object.values(checklistAnswers).filter((a) => {
+      const hasRating = (a.answer_rating !== null && String(a.answer_rating) !== '');
+      const hasText = a.answer_text !== null && a.answer_text.trim() !== '';
+      return hasRating || hasText;
+    }).length
   }
 
   function totalChecklistItems(): number {
@@ -522,7 +529,17 @@ function InspectionsNewPageInner() {
   }
 
   function sectionRatedCount(items: ChecklistTemplateRow[]): number {
-    return items.filter((item) => checklistAnswers[item.item_code]?.answer_rating !== null).length
+    return items.filter((item) => {
+      const answer = checklistAnswers[item.item_code];
+      const isRequired = (item as any).is_required !== false;
+    
+      if (!isRequired) return false;
+    
+      const hasRating = answer?.answer_rating !== null && answer?.answer_rating !== '';
+      const hasText = answer?.answer_text !== null && answer.answer_text.trim() !== '';
+    
+      return hasRating || hasText;
+    }).length
   }
 
   function getRiskBadge(category: string | null | undefined): RiskBadge | null {
@@ -534,10 +551,10 @@ function InspectionsNewPageInner() {
   // Checklist handlers
   // =========================================================================
 
-  function handleRating(itemCode: string, rating: number) {
+  function handleRating(itemCode: string, rating: number | string) {
     setChecklistAnswers((prev) => ({
       ...prev,
-      [itemCode]: { ...prev[itemCode], answer_rating: rating },
+      [itemCode]: { ...prev[itemCode], answer_rating: String(rating) },
     }))
   }
 
@@ -1136,41 +1153,73 @@ function InspectionsNewPageInner() {
                                         </div>
                                       </div>
 
-                                      {/* Rating selector (only for rating items) */}
-                                      {item.item_type === 'rating' && (
-                                        <div className="flex items-center gap-1.5">
-                                          {[1, 2, 3, 4, 5].map((r) => (
-                                            <button
-                                              key={r}
-                                              type="button"
-                                              onClick={() => handleRating(item.item_code, r)}
-                                              className={cn(
-                                                'flex flex-col items-center justify-center w-14 h-12 rounded-lg text-xs font-medium border transition-all',
-                                                currentRating === r
-                                                  ? 'bg-primary text-primary-foreground border-primary shadow-sm'
-                                                  : 'bg-background text-muted-foreground border-border/70 hover:border-primary/50 hover:bg-accent',
-                                              )}
-                                              title={RATING_LABELS[r]}
-                                            >
-                                              <span className="text-sm font-bold leading-none">{r}</span>
-                                              <span className="text-[9px] mt-0.5 leading-tight">
-                                                {RATING_LABELS[r]}
-                                              </span>
-                                            </button>
-                                          ))}
-                                        </div>
-                                      )}
-
-                                      {/* Notes per item */}
-                                      <div>
-                                        <input
-                                          type="text"
-                                          value={noteValue}
-                                          onChange={(e) => handleChecklistNote(item.item_code, e.target.value)}
-                                          placeholder="Optional notes for this item..."
-                                          className="w-full rounded-lg border border-border/70 bg-background px-3 py-2 text-xs focus:outline-none focus:ring-2 focus:ring-primary/30 transition-all"
-                                        />
-                                      </div>
+                                      {(() => {
+  const answered = checklistAnswers[item.item_code];
+  const currentVal = answered?.answer_rating ?? '';
+  const btnBase = 'px-4 py-2 rounded-lg text-sm font-medium border transition-all';
+  const sel = `${btnBase} bg-indigo-600 text-white border-indigo-600`;
+  const unsel = `${btnBase} bg-white text-indigo-600 border-indigo-200 hover:border-indigo-400`;
+  const Btn = ({ value }: { value: string }) => (
+    <button type="button"
+      onClick={() => handleRating(item.item_code, value as any)}
+      className={currentVal === value ? sel : unsel}
+    >{value}</button>
+  );
+  if ((item as any).item_type === 'yes_no_na') return (
+    <div className="flex gap-2">
+      <Btn value="Yes"/><Btn value="No"/><Btn value="N/A"/>
+    </div>
+  );
+  if ((item as any).item_type === 'yes_no') return (
+    <div className="flex gap-2">
+      <Btn value="Yes"/><Btn value="No"/>
+    </div>
+  );
+  if ((item as any).item_type === 'pass_fail') return (
+    <div className="flex gap-2">
+      <Btn value="Pass"/><Btn value="Fail"/>
+    </div>
+  );
+  if ((item as any).item_type === 'rating') return (
+    <div className="flex gap-2">
+      <Btn value="Good"/><Btn value="Fair"/><Btn value="Poor"/>
+    </div>
+  );
+  if ((item as any).item_type === 'numeric') return (
+    <div className="flex items-center gap-2">
+      <input type="number"
+        value={answered?.answer_text ?? ''}
+        onChange={(e) => handleChecklistNote(item.item_code, e.target.value)}
+        className="w-32 rounded-lg border border-border/70 bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary/30"
+        placeholder="0"
+      />
+      {(item as any).unit && <span className="text-xs text-muted-foreground">{(item as any).unit}</span>}
+    </div>
+  );
+  if ((item as any).item_type === 'text') return (
+    <textarea rows={2}
+      value={answered?.answer_text ?? ''}
+      onChange={(e) => handleChecklistNote(item.item_code, e.target.value)}
+      className="w-full rounded-lg border border-border/70 bg-background px-3 py-2 text-sm resize-none focus:outline-none focus:ring-2 focus:ring-primary/30"
+      placeholder="Enter notes..."
+    />
+  );
+  return (
+    <div className="flex items-center gap-1.5">
+      {[1,2,3,4,5].map((r) => (
+        <button key={r} type="button"
+          onClick={() => handleRating(item.item_code, r as any)}
+          className={cn('flex flex-col items-center justify-center w-14 h-12 rounded-lg text-xs font-medium border transition-all',
+            answered?.answer_rating === String(r)
+              ? 'bg-primary text-primary-foreground border-primary shadow-sm'
+              : 'bg-background text-muted-foreground border-border/70')}
+        >
+          <span className="text-sm font-bold leading-none">{r}</span>
+        </button>
+      ))}
+    </div>
+  );
+})()}
                                     </div>
                                   )
                                 })}
