@@ -1,0 +1,22 @@
+{
+  "version": 2,
+  "builds": [
+    {
+      "src": "api/rbi_endpoints.py",
+      "use": "@vercel/python"
+    }
+  ],
+  "routes": [
+    {
+      "src": "/api/(.*)",
+      "dest": "api/rbi_endpoints.py"
+    },
+    {
+      "src": "/(.*)",
+      "dest": "api/rbi_endpoints.py"
+    }
+  ],
+  "env": {
+    "PYTHON_VERSION": "3.11"
+  }
+}

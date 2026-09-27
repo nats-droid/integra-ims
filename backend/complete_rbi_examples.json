@@ -1,0 +1,113 @@
+{
+  "high_risk_example": {
+    "component_id": "P-101",
+    "component_type": "pipe",
+    "damage_factors": {
+      "thinning": 450.0,
+      "external_corrosion": 120.0,
+      "cui": 85.0,
+      "chloride_scc": 280.0,
+      "hic_sohic_h2s": 350.0
+    },
+    "pof": {
+      "pof_per_year": 0.20046,
+      "gff": 0.000156,
+      "total_df": 1285.0,
+      "fms": 1.0,
+      "active_mechanisms": 5
+    },
+    "cof": {
+      "cof_financial": 2173625.060275991,
+      "ca_cmd": 1920000.0,
+      "ca_flam": 4227.084337933181,
+      "ca_tox": 0,
+      "ca_env": 2113.5421689665905,
+      "release_rate_lbs_sec": 0.7045140563221968,
+      "total_release_lbs": 422.7084337933181
+    },
+    "risk": {
+      "pof_category": 5,
+      "cof_category": "D",
+      "risk_score": 435724.8795829252,
+      "risk_level": "High"
+    },
+    "risk_matrix_position": "5D",
+    "inspection_recommendation": {
+      "interval_years": 2,
+      "effectiveness": "A",
+      "priority": "Critical"
+    }
+  },
+  "medium_risk_example": {
+    "component_id": "V-202",
+    "component_type": "vessel",
+    "damage_factors": {
+      "thinning": 65.0,
+      "external_corrosion": 15.0
+    },
+    "pof": {
+      "pof_per_year": 0.024480000000000002,
+      "gff": 0.000306,
+      "total_df": 80.0,
+      "fms": 1.0,
+      "active_mechanisms": 2
+    },
+    "cof": {
+      "cof_financial": 1595312.9959147011,
+      "ca_cmd": 1440000.0,
+      "ca_flam": 2588.549931911687,
+      "ca_tox": 0,
+      "ca_env": 1294.2749659558435,
+      "release_rate_lbs_sec": 0.43142498865194784,
+      "total_release_lbs": 258.8549931911687
+    },
+    "risk": {
+      "pof_category": 5,
+      "cof_category": "D",
+      "risk_score": 39053.262139991886,
+      "risk_level": "High"
+    },
+    "risk_matrix_position": "5D",
+    "inspection_recommendation": {
+      "interval_years": 2,
+      "effectiveness": "A",
+      "priority": "Critical"
+    }
+  },
+  "low_risk_example": {
+    "component_id": "T-301",
+    "component_type": "tank",
+    "damage_factors": {
+      "thinning": 8.0,
+      "external_corrosion": 2.0
+    },
+    "pof": {
+      "pof_per_year": 6.91e-05,
+      "gff": 6.91e-06,
+      "total_df": 10.0,
+      "fms": 1.0,
+      "active_mechanisms": 2
+    },
+    "cof": {
+      "cof_financial": 186466.19565741712,
+      "ca_cmd": 180000.0,
+      "ca_flam": 0,
+      "ca_tox": 0,
+      "ca_env": 323.30978287085594,
+      "release_rate_lbs_sec": 0.10776992762361863,
+      "total_release_lbs": 64.66195657417119
+    },
+    "risk": {
+      "pof_category": 3,
+      "cof_category": "C",
+      "risk_score": 12.884814119927523,
+      "risk_level": "Medium-High"
+    },
+    "risk_matrix_position": "3C",
+    "inspection_recommendation": {
+      "interval_years": 4,
+      "effectiveness": "B",
+      "priority": "High"
+    }
+  }
+}
