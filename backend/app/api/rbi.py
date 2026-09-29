@@ -1,318 +1,386 @@
-"""
-RBI (Risk-Based Inspection) API Router
-Integrates complete RBI API 581 4th Edition calculator
-"""
-
-from fastapi import APIRouter, HTTPException
-from pydantic import BaseModel
-from typing import Optional, List, Dict, Any
+from fastapi import APIRouter, Depends, HTTPException
+from pydantic import BaseModel, Field
+from typing import List, Dict, Optional
 from datetime import datetime
+from enum import Enum
 
-router = APIRouter(prefix="/api/v1/rbi", tags=["RBI"])
+from app.api.auth import verify_jwt
 
+# Import RBI modules
+import sys
+sys.path.insert(0, '/root/integra/backend')
+from codecalc.tmin_calculator import calculate_tmin_piping, calculate_tmin_vessel
+from codecalc.corrosion_rate import calculate_corrosion_rate
+from fms_audit import calculate_fms
+from timeline_planning import RiskTimeline
+from inspection_equivalence import (
+    InspectionRecord, 
+    InspectionEffectiveness, 
+    InspectionType,
+    calculate_equivalence_credit
+)
+from complete_rbi_simplified import CompleteRBICalculator
+
+router = APIRouter()
+
+# ============================================================================
+# CONVERSION UTILITIES
+# ============================================================================
+
+def mm_to_inch(mm: float) -> float:
+    return mm / 25.4
+
+def inch_to_mm(inch: float) -> float:
+    return inch * 25.4
+
+def bar_to_psi(bar: float) -> float:
+    return bar * 14.5038
+
+def psi_to_bar(psi: float) -> float:
+    return psi / 14.5038
+
+def mpa_to_psi(mpa: float) -> float:
+    return mpa * 145.038
+
+def psi_to_mpa(psi: float) -> float:
+    return psi / 145.038
+
+def celsius_to_fahrenheit(c: float) -> float:
+    return (c * 9/5) + 32
+
+def fahrenheit_to_celsius(f: float) -> float:
+    return (f - 32) * 5/9
+
+def mm_yr_to_mpy(mm_yr: float) -> float:
+    """mm/yr to mils per year"""
+    return mm_yr / 0.0254
+
+def mpy_to_mm_yr(mpy: float) -> float:
+    """mils per year to mm/yr"""
+    return mpy * 0.0254
 
 # ============================================================================
 # REQUEST/RESPONSE MODELS
 # ============================================================================
 
 class TminRequest(BaseModel):
-    """Required thickness calculation request"""
-    design_code: str  # B31.3, ASME_VIII_1, API_653, API_574
-    equipment_type: str  # pipe, vessel, tank
-    pressure: float  # bar or psig
-    diameter: float  # mm or inches
-    design_temp: float  # °C or °F
-    material: str
-    corrosion_allowance: float
-    joint_efficiency: Optional[float] = 1.0
-    unit_system: Optional[str] = "SI"  # SI or USC
-
+    equipment_type: str = Field(..., pattern="^(pipe|vessel)$")
+    pressure_bar: float = Field(..., gt=0)
+    allowable_stress_mpa: float = Field(..., gt=0)
+    joint_efficiency: float = Field(..., gt=0, le=1.0)
+    corrosion_allowance_mm: float = Field(default=0.0, ge=0)
+    design_temp_c: float
+    # Pipe-specific
+    od_mm: Optional[float] = Field(None, gt=0)
+    nps_in: Optional[float] = Field(None, gt=0)
+    # Vessel-specific
+    id_mm: Optional[float] = Field(None, gt=0)
 
 class CorrosionRateRequest(BaseModel):
-    """Corrosion rate calculation request"""
-    thickness_history: List[Dict[str, Any]]  # [{"date": "2020-01-01", "thickness": 20.0}, ...]
-    tmin: float
-    design_life: Optional[float] = 20.0
-
+    readings: List[Dict[str, str]] = Field(..., min_length=2)
 
 class FMSRequest(BaseModel):
-    """FMS Audit request"""
-    audit_scores: Dict[str, int]  # 14 categories
-
+    leadership: float = Field(..., ge=0, le=100)
+    process_safety_info: float = Field(..., ge=0, le=100)
+    risk_management: float = Field(..., ge=0, le=100)
+    operations: float = Field(..., ge=0, le=100)
+    maintenance: float = Field(..., ge=0, le=100)
+    inspection: float = Field(..., ge=0, le=100)
 
 class TimelineRequest(BaseModel):
-    """Risk timeline planning request"""
-    equipment_id: str
-    initial_pof: float
-    cof: float
-    corrosion_rate: float
-    current_thickness: float
-    years: Optional[int] = 10
+    pof_0: float = Field(..., ge=0)
+    cof: float = Field(..., ge=0)
+    corrosion_rate_mm_yr: float = Field(..., ge=0)
+    t_actual_mm: float = Field(..., gt=0)
+    t_required_mm: float = Field(..., gt=0)
+    horizon_years: int = Field(default=10, ge=1, le=30)
 
+class InspectionInput(BaseModel):
+    date: str = Field(..., pattern=r"^\d{4}-\d{2}-\d{2}$")
+    effectiveness: str = Field(..., pattern="^[A-E]$")
+    inspection_type: str
 
 class EquivalenceRequest(BaseModel):
-    """Inspection equivalence request"""
-    inspections: List[Dict[str, Any]]  # [{"type": "A", "date": "2020-01-01", "effectiveness": 0.9}, ...]
-    damage_mechanism: str
-
+    inspections: List[InspectionInput] = Field(..., min_length=1)
 
 class CompleteRBIRequest(BaseModel):
-    """Complete RBI assessment request"""
-    equipment_id: str
-    equipment_type: str
-    damage_mechanism: str
-    operating_pressure: float
-    operating_temp: float
-    diameter: float
-    thickness_current: float
-    thickness_history: Optional[List[Dict[str, Any]]] = None
-    material: str
-    fms_audit_scores: Optional[Dict[str, int]] = None
-    inspection_history: Optional[List[Dict[str, Any]]] = None
-    consequence_data: Optional[Dict[str, Any]] = None
-
+    component_id: str
+    component_type: str
+    fluid_type: str
+    pressure_bar: float = Field(..., gt=0)
+    temp_c: float
+    diameter_mm: float = Field(..., gt=0)
+    fms: float = Field(default=1.0, ge=0, le=10.0)
+    damage_factors: Dict[str, float]
 
 # ============================================================================
 # ENDPOINTS
 # ============================================================================
 
 @router.post("/calculate-tmin")
-async def calculate_tmin(request: TminRequest):
+async def calculate_tmin(
+    req: TminRequest,
+    user: dict = Depends(verify_jwt)
+):
     """
-    Calculate required minimum thickness per code (API 570/510/653, B31.3, ASME VIII)
-    
-    Returns:
-    - t_required: Required thickness by formula
-    - t_min: Required thickness + corrosion allowance
-    - code: Applied code/standard
-    - steps: Calculation steps for audit trail
+    Calculate minimum required thickness per API 570/510/653
+    Input: SI units (bar, MPa, mm, °C)
+    Output: SI units (mm)
     """
     try:
-        # Import RBI calculator modules
-        from codecalc.tmin_calculator import calculate_tmin_piping, calculate_tmin_vessel
+        # Convert to imperial for calculation
+        P_psi = bar_to_psi(req.pressure_bar)
+        S_psi = mpa_to_psi(req.allowable_stress_mpa)
+        E = req.joint_efficiency
+        ca_inch = mm_to_inch(req.corrosion_allowance_mm)
         
-        # Route to appropriate calculator
-        if request.equipment_type == "pipe":
-            # For piping: calculate_tmin_piping(P, D, S, E, NPS, T_design, W, Y, corrosion_allowance)
+        result = None
+        
+        if req.equipment_type == "pipe":
+            if not req.od_mm or not req.nps_in:
+                raise HTTPException(status_code=422, detail="pipe requires od_mm and nps_in")
+            
+            D_inch = mm_to_inch(req.od_mm)
+            
             result = calculate_tmin_piping(
-                P=request.pressure,
-                D=request.diameter,
-                S=20000,  # Allowable stress (default for carbon steel)
-                E=request.joint_efficiency,
-                NPS=request.diameter,
-                T_design=request.design_temp,
-                corrosion_allowance=request.corrosion_allowance,
+                P=P_psi,
+                D=D_inch,
+                S=S_psi,
+                E=E,
+                NPS=req.nps_in,
+                T_design=req.design_temp_c,
+                corrosion_allowance=ca_inch
             )
-        elif request.equipment_type in ["vessel", "tank"]:
-            # For vessel: calculate_tmin_vessel(P, R_or_D, S, E, component_type, corrosion_allowance)
+        
+        elif req.equipment_type == "vessel":
+            if not req.id_mm:
+                raise HTTPException(status_code=422, detail="vessel requires id_mm")
+            
+            R_inch = mm_to_inch(req.id_mm) / 2
+            
             result = calculate_tmin_vessel(
-                P=request.pressure,
-                R_or_D=request.diameter/2,  # Radius
-                S=20000,  # Allowable stress
-                E=request.joint_efficiency,
+                P=P_psi,
+                R_or_D=R_inch,
+                S=S_psi,
+                E=E,
                 component_type='shell',
-                corrosion_allowance=request.corrosion_allowance,
+                corrosion_allowance=ca_inch
             )
         else:
-            raise HTTPException(status_code=400, detail=f"Unsupported equipment type: {request.equipment_type}")
+            raise HTTPException(status_code=422, detail="equipment_type must be pipe or vessel")
         
-        return {
-            "success": True,
-            "data": result,
-            "equipment_id": None,
-            "timestamp": datetime.utcnow().isoformat()
-        }
+        # Convert thickness values to mm
+        result_mm = {}
+        for key, value in result.items():
+            if 't_' in key.lower() or 'thickness' in key.lower():
+                if isinstance(value, (int, float)):
+                    result_mm[key] = inch_to_mm(value)
+                else:
+                    result_mm[key] = value
+            else:
+                result_mm[key] = value
         
+        return {"status": "ok", "data": result_mm}
+    
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=422, detail=str(e))
 
 
 @router.post("/calculate-corrosion-rate")
-async def calculate_corrosion_rate(request: CorrosionRateRequest):
+async def calculate_corrosion_rate_endpoint(
+    req: CorrosionRateRequest,
+    user: dict = Depends(verify_jwt)
+):
     """
-    Calculate corrosion rate and remaining life from thickness history
-    
-    Returns:
-    - LT_rate: Long-term corrosion rate (mm/yr)
-    - ST_rate: Short-term corrosion rate (mm/yr)
-    - remaining_life: Years until t_min reached
-    - trend: Accelerating, stable, or decelerating
+    Calculate corrosion rate from thickness readings
+    Input: thickness in mm, dates as YYYY-MM-DD
+    Output: corrosion rates in mm/yr
     """
     try:
-        from codecalc.corrosion_rate import calculate_corrosion_rate
+        # Convert mm to inch for calculation
+        thickness_history_inch = []
+        for reading in req.readings:
+            thickness_history_inch.append({
+                'date': reading['date'],
+                'thickness': mm_to_inch(float(reading['thickness_mm']))
+            })
         
-        # Convert thickness history to proper format
-        thickness_history = [
-            (datetime.fromisoformat(item["date"]), item["thickness"])
-            for item in request.thickness_history
-        ]
+        result = calculate_corrosion_rate(thickness_history_inch)
         
-        result = calculate_corrosion_rate(
-            thickness_history=thickness_history,
-            tmin=request.tmin,
-            design_life=request.design_life,
-        )
+        # Convert corrosion rates to mm/yr
+        result_mm = {}
+        for key, value in result.items():
+            if 'CR' in key or 'rate' in key.lower():
+                if isinstance(value, (int, float)):
+                    result_mm[key] = mpy_to_mm_yr(value)
+                else:
+                    result_mm[key] = value
+            else:
+                result_mm[key] = value
         
-        return {
-            "success": True,
-            "data": result,
-            "timestamp": datetime.utcnow().isoformat()
-        }
-        
+        return {"status": "ok", "data": result_mm}
+    
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=422, detail=str(e))
 
 
 @router.post("/calculate-fms")
-async def calculate_fms(request: FMSRequest):
+async def calculate_fms_endpoint(
+    req: FMSRequest,
+    user: dict = Depends(verify_jwt)
+):
     """
-    Calculate FMS (Management Systems Factor) from 72-item audit
-    
-    Returns:
-    - pscore: Total audit score (0-100)
-    - fms: FMS factor (0.5 - 2.5)
-    - interpretation: Management system quality level
+    Calculate FMS (Facility Management Score) from 6 section scores
+    Input: 6 scores (0-100)
+    Output: FMS value
     """
     try:
-        from fms_audit import calculate_fms
-        
-        result = calculate_fms(request.audit_scores)
-        
-        return {
-            "success": True,
-            "data": result,
-            "timestamp": datetime.utcnow().isoformat()
+        audit_scores = {
+            'leadership': req.leadership,
+            'process_safety_info': req.process_safety_info,
+            'risk_management': req.risk_management,
+            'operations': req.operations,
+            'maintenance': req.maintenance,
+            'inspection': req.inspection
         }
         
+        result = calculate_fms(audit_scores)
+        
+        return {"status": "ok", "data": result}
+    
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=422, detail=str(e))
 
 
 @router.post("/calculate-timeline")
-async def calculate_timeline(request: TimelineRequest):
+async def calculate_timeline_endpoint(
+    req: TimelineRequest,
+    user: dict = Depends(verify_jwt)
+):
     """
-    Calculate 10-year risk timeline with 0.5-year time steps
-    
-    Returns:
-    - timeline: List of {year, pof, risk, thickness} points
-    - recommended_inspection_dates: Optimal inspection schedule
-    - risk_trajectory: Increasing, stable, or decreasing
+    Calculate 10-year risk trajectory
+    Input: SI units (mm, mm/yr)
+    Output: risk timeline
     """
     try:
-        from timeline_planning import calculate_risk_timeline
+        # Convert to imperial for calculation
+        cr_mpy = mm_yr_to_mpy(req.corrosion_rate_mm_yr)
+        t_actual_inch = mm_to_inch(req.t_actual_mm)
+        t_required_inch = mm_to_inch(req.t_required_mm)
         
-        result = calculate_risk_timeline(
-            equipment_id=request.equipment_id,
-            initial_pof=request.initial_pof,
-            cof=request.cof,
-            corrosion_rate_mpy=request.corrosion_rate,
-            current_thickness_inches=request.current_thickness,
-            years=request.years,
+        timeline = RiskTimeline(
+            assessment_date=datetime.now(),
+            plan_horizon_years=req.horizon_years
         )
         
-        return {
-            "success": True,
-            "data": result,
-            "equipment_id": request.equipment_id,
-            "timestamp": datetime.utcnow().isoformat()
-        }
+        trajectory = timeline.calculate_risk_trajectory(
+            pof_0=req.pof_0,
+            cof=req.cof,
+            corrosion_rate_mpy=cr_mpy,
+            t_actual=t_actual_inch,
+            t_required=t_required_inch
+        )
         
+        return {"status": "ok", "data": trajectory}
+    
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=422, detail=str(e))
 
 
 @router.post("/calculate-equivalence")
-async def calculate_equivalence(request: EquivalenceRequest):
+async def calculate_equivalence_endpoint(
+    req: EquivalenceRequest,
+    user: dict = Depends(verify_jwt)
+):
     """
-    Calculate inspection equivalence credit (2 Type B = 1 Type A)
-    
-    Returns:
-    - total_credit: Equivalent Type A inspections
-    - meets_requirement: True if sufficient credit
-    - recommendation: Next inspection type needed
+    Calculate inspection equivalence credit (2B = 1A)
+    Input: inspection history
+    Output: equivalence credit
     """
     try:
-        from inspection_equivalence import calculate_inspection_credit
+        inspection_records = []
         
-        result = calculate_inspection_credit(
-            inspections=request.inspections,
-            damage_mechanism=request.damage_mechanism,
-        )
+        for insp in req.inspections:
+            try:
+                effectiveness = InspectionEffectiveness(insp.effectiveness)
+            except ValueError:
+                raise HTTPException(
+                    status_code=422, 
+                    detail=f"Invalid effectiveness: {insp.effectiveness}. Must be A, B, C, D, or E"
+                )
+            
+            try:
+                insp_type = InspectionType(insp.inspection_type)
+            except ValueError:
+                raise HTTPException(
+                    status_code=422,
+                    detail=f"Invalid inspection_type: {insp.inspection_type}"
+                )
+            
+            record = InspectionRecord(
+                inspection_date=datetime.strptime(insp.date, '%Y-%m-%d'),
+                effectiveness=effectiveness,
+                inspection_type=insp_type
+            )
+            inspection_records.append(record)
         
-        return {
-            "success": True,
-            "data": result,
-            "timestamp": datetime.utcnow().isoformat()
-        }
+        result = calculate_equivalence_credit(inspection_records)
         
+        return {"status": "ok", "data": result}
+    
+    except HTTPException:
+        raise
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=422, detail=str(e))
 
 
 @router.post("/complete-rbi")
-async def complete_rbi(request: CompleteRBIRequest):
+async def complete_rbi_endpoint(
+    req: CompleteRBIRequest,
+    user: dict = Depends(verify_jwt)
+):
     """
-    Complete RBI assessment - integrates all modules
-    
-    Returns:
-    - pof: Probability of failure
-    - cof: Consequence of failure
-    - risk: Risk score (POF × COF)
-    - risk_category: High/Medium-High/Medium/Medium-Low/Low
-    - next_inspection_date: Recommended date
-    - timeline: 10-year risk trajectory
-    - flags: Data quality flags (MISSING, ASSUMED, etc.)
-    - steps: Complete calculation audit trail
+    Complete RBI calculation with all damage mechanisms
+    Input: SI units (bar, °C, mm)
+    Output: RBI result with risk matrix
     """
     try:
-        from complete_rbi_simplified import calculate_complete_rbi
-        
-        result = calculate_complete_rbi(
-            equipment_id=request.equipment_id,
-            equipment_type=request.equipment_type,
-            damage_mechanism=request.damage_mechanism,
-            operating_pressure=request.operating_pressure,
-            operating_temp=request.operating_temp,
-            diameter=request.diameter,
-            thickness_current=request.thickness_current,
-            thickness_history=request.thickness_history,
-            material=request.material,
-            fms_audit_scores=request.fms_audit_scores,
-            inspection_history=request.inspection_history,
-            consequence_data=request.consequence_data,
-        )
-        
-        return {
-            "success": True,
-            "data": result,
-            "equipment_id": request.equipment_id,
-            "timestamp": datetime.utcnow().isoformat()
+        # Convert to imperial for calculation
+        component_data = {
+            'component_id': req.component_id,
+            'component_type': req.component_type,
+            'fluid_type': req.fluid_type,
+            'operating_pressure_psig': bar_to_psi(req.pressure_bar) - 14.7,  # gauge pressure
+            'operating_temp_f': celsius_to_fahrenheit(req.temp_c),
+            'diameter_inches': mm_to_inch(req.diameter_mm),
+            'fms': req.fms
         }
         
+        calculator = CompleteRBICalculator()
+        result = calculator.calculate_complete_rbi(component_data, req.damage_factors)
+        
+        return {"status": "ok", "data": result}
+    
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=422, detail=str(e))
 
 
 @router.get("/health")
-async def rbi_health():
-    """RBI module health check"""
-    try:
-        from codecalc.tmin_calculator import calculate_tmin_piping
-        
-        return {
-            "status": "ok",
-            "module": "RBI API 581",
-            "version": "1.0.0",
-            "features": [
-                "Code calculations (API 570/510/653)",
-                "FMS audit (72-item)",
-                "Risk timeline (10-year)",
-                "Inspection equivalence (2B=1A)",
-                "Complete RBI assessment",
-            ]
-        }
-    except Exception as e:
-        return {
-            "status": "error",
-            "message": str(e)
-        }
+async def health_check():
+    """
+    Health check endpoint (no auth required)
+    """
+    return {
+        "status": "ok",
+        "service": "RBI API",
+        "version": "1.0.0",
+        "endpoints": [
+            "POST /api/v1/rbi/calculate-tmin",
+            "POST /api/v1/rbi/calculate-corrosion-rate",
+            "POST /api/v1/rbi/calculate-fms",
+            "POST /api/v1/rbi/calculate-timeline",
+            "POST /api/v1/rbi/calculate-equivalence",
+            "POST /api/v1/rbi/complete-rbi",
+            "GET /api/v1/rbi/health"
+        ]
+    }

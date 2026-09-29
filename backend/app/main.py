@@ -30,5 +30,5 @@ app.include_router(ai_config.router, prefix="/api/v1", tags=["AI Config"])
 app.include_router(remaining_life.router, tags=["Remaining Life"])
 app.include_router(dm_screener.router, tags=["DM Screener"])
 app.include_router(rl_confidence.router, tags=["RL Confidence"])
-app.include_router(rbi.router, tags=["RBI"])
+app.include_router(rbi.router, prefix="/api/v1/rbi", tags=["RBI"])
 

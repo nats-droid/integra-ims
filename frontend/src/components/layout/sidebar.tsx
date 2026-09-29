@@ -8,7 +8,7 @@ import {
   LayoutDashboard, Wrench, ClipboardList, CalendarCheck,
   FlaskConical, FileText, Settings, Activity, Gauge,
   Pipette, Layers, BarChart3, BarChart2, Brain, ChevronDown,
-  ChevronRight, LogOut, User, MapPin, Shield, ClipboardCheck,
+  ChevronRight, LogOut, User, MapPin, Shield, ClipboardCheck, Calculator,
 } from 'lucide-react'
 import { cn } from '@/utils/cn'
 
@@ -28,6 +28,7 @@ const NAV = [
   { href: '/campaigns', label: 'Campaigns', icon: FlaskConical, color: 'text-teal-500' },
   { href: '/checklist-builder', label: 'Checklist Builder', icon: ClipboardCheck, color: 'text-indigo-500', roles: ['supervisor', 'super_admin'] },
   { href: '/dm-screener', label: 'DM Screener', icon: Shield, color: 'text-amber-500' },
+  { href: '/rbi', label: 'RBI', icon: Calculator, color: 'text-emerald-500' },
   { href: '/ai-insight', label: 'AI Insight', icon: Brain, color: 'text-purple-500' },
   { href: '/ml-analytics', label: 'ML Analytics', icon: BarChart3, color: 'text-blue-500' },
   { href: '/thickness-analytics', label: 'Thickness Analytics', icon: BarChart2, color: 'text-cyan-500' },
