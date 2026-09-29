@@ -7,8 +7,6 @@ from enum import Enum
 from app.api.auth import verify_jwt
 
 # Import RBI modules
-import sys
-sys.path.insert(0, '/root/integra/backend')
 from codecalc.tmin_calculator import calculate_tmin_piping, calculate_tmin_vessel
 from codecalc.corrosion_rate import calculate_corrosion_rate
 from fms_audit import calculate_fms
@@ -80,12 +78,12 @@ class CorrosionRateRequest(BaseModel):
     readings: List[Dict[str, str]] = Field(..., min_length=2)
 
 class FMSRequest(BaseModel):
-    leadership: float = Field(..., ge=0, le=100)
-    process_safety_info: float = Field(..., ge=0, le=100)
-    risk_management: float = Field(..., ge=0, le=100)
-    operations: float = Field(..., ge=0, le=100)
-    maintenance: float = Field(..., ge=0, le=100)
-    inspection: float = Field(..., ge=0, le=100)
+    management_inspection: float = Field(..., ge=0, le=100)
+    site_management: float = Field(..., ge=0, le=100)
+    management_of_change: float = Field(..., ge=0, le=100)
+    failure_investigation: float = Field(..., ge=0, le=100)
+    process_safety: float = Field(..., ge=0, le=100)
+    operating_procedures: float = Field(..., ge=0, le=100)
 
 class TimelineRequest(BaseModel):
     pof_0: float = Field(..., ge=0)
@@ -133,6 +131,7 @@ async def calculate_tmin(
         S_psi = mpa_to_psi(req.allowable_stress_mpa)
         E = req.joint_efficiency
         ca_inch = mm_to_inch(req.corrosion_allowance_mm)
+        T_design_f = celsius_to_fahrenheit(req.design_temp_c)
         
         result = None
         
@@ -148,9 +147,17 @@ async def calculate_tmin(
                 S=S_psi,
                 E=E,
                 NPS=req.nps_in,
-                T_design=req.design_temp_c,
+                T_design=T_design_f,
                 corrosion_allowance=ca_inch
             )
+            
+            # Convert pipe thickness values to mm (explicit keys)
+            result_mm = {}
+            for key, value in result.items():
+                if key in ['t_pressure', 't_structural', 't_required_base', 'corrosion_allowance', 'tm']:
+                    result_mm[key] = inch_to_mm(value)
+                else:
+                    result_mm[key] = value
         
         elif req.equipment_type == "vessel":
             if not req.id_mm:
@@ -166,19 +173,16 @@ async def calculate_tmin(
                 component_type='shell',
                 corrosion_allowance=ca_inch
             )
-        else:
-            raise HTTPException(status_code=422, detail="equipment_type must be pipe or vessel")
-        
-        # Convert thickness values to mm
-        result_mm = {}
-        for key, value in result.items():
-            if 't_' in key.lower() or 'thickness' in key.lower():
-                if isinstance(value, (int, float)):
+            
+            # Convert vessel thickness values to mm (explicit keys)
+            result_mm = {}
+            for key, value in result.items():
+                if key in ['t_circumferential', 't_longitudinal', 't_required_base', 'corrosion_allowance', 'tm']:
                     result_mm[key] = inch_to_mm(value)
                 else:
                     result_mm[key] = value
-            else:
-                result_mm[key] = value
+        else:
+            raise HTTPException(status_code=422, detail="equipment_type must be pipe or vessel")
         
         return {"status": "ok", "data": result_mm}
     
@@ -207,14 +211,13 @@ async def calculate_corrosion_rate_endpoint(
         
         result = calculate_corrosion_rate(thickness_history_inch)
         
-        # Convert corrosion rates to mm/yr
+        # Convert corrosion rates and thickness to mm (explicit keys)
         result_mm = {}
         for key, value in result.items():
-            if 'CR' in key or 'rate' in key.lower():
-                if isinstance(value, (int, float)):
-                    result_mm[key] = mpy_to_mm_yr(value)
-                else:
-                    result_mm[key] = value
+            if key in ['CR_LT', 'CR_ST', 'governing_rate']:
+                result_mm[key] = mpy_to_mm_yr(value)
+            elif key in ['initial_thickness', 'current_thickness', 'thickness_loss_LT', 'thickness_loss_ST']:
+                result_mm[key] = inch_to_mm(value)
             else:
                 result_mm[key] = value
         
@@ -236,12 +239,12 @@ async def calculate_fms_endpoint(
     """
     try:
         audit_scores = {
-            'leadership': req.leadership,
-            'process_safety_info': req.process_safety_info,
-            'risk_management': req.risk_management,
-            'operations': req.operations,
-            'maintenance': req.maintenance,
-            'inspection': req.inspection
+            'management_inspection': req.management_inspection,
+            'site_management': req.site_management,
+            'management_of_change': req.management_of_change,
+            'failure_investigation': req.failure_investigation,
+            'process_safety': req.process_safety,
+            'operating_procedures': req.operating_procedures
         }
         
         result = calculate_fms(audit_scores)
@@ -350,7 +353,7 @@ async def complete_rbi_endpoint(
             'component_id': req.component_id,
             'component_type': req.component_type,
             'fluid_type': req.fluid_type,
-            'operating_pressure_psig': bar_to_psi(req.pressure_bar) - 14.7,  # gauge pressure
+            'operating_pressure_psig': bar_to_psi(req.pressure_bar),
             'operating_temp_f': celsius_to_fahrenheit(req.temp_c),
             'diameter_inches': mm_to_inch(req.diameter_mm),
             'fms': req.fms

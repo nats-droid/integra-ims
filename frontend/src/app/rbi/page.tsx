@@ -93,12 +93,12 @@ export default function RBIPage() {
   const [corrosionResult, setCorrosionResult] = useState<CorrosionRateResult | null>(null)
 
   // FMS state
-  const [leadership, setLeadership] = useState('85')
-  const [processSafetyInfo, setProcessSafetyInfo] = useState('78')
-  const [riskManagement, setRiskManagement] = useState('82')
-  const [operations, setOperations] = useState('88')
-  const [maintenance, setMaintenance] = useState('75')
-  const [inspection, setInspection] = useState('80')
+  const [managementInspection, setManagementInspection] = useState('85')
+  const [siteManagement, setSiteManagement] = useState('78')
+  const [managementOfChange, setManagementOfChange] = useState('82')
+  const [failureInvestigation, setFailureInvestigation] = useState('88')
+  const [processSafety, setProcessSafety] = useState('75')
+  const [operatingProcedures, setOperatingProcedures] = useState('80')
   const [fmsResult, setFmsResult] = useState<FMSResult | null>(null)
 
   // Timeline state
@@ -188,14 +188,14 @@ export default function RBIPage() {
 
   const calculateFMS = useCallback(() => {
     callRBIEndpoint('calculate-fms', {
-      leadership: parseFloat(leadership),
-      process_safety_info: parseFloat(processSafetyInfo),
-      risk_management: parseFloat(riskManagement),
-      operations: parseFloat(operations),
-      maintenance: parseFloat(maintenance),
-      inspection: parseFloat(inspection)
+      management_inspection: parseFloat(managementInspection),
+      site_management: parseFloat(siteManagement),
+      management_of_change: parseFloat(managementOfChange),
+      failure_investigation: parseFloat(failureInvestigation),
+      process_safety: parseFloat(processSafety),
+      operating_procedures: parseFloat(operatingProcedures)
     }, setFmsResult)
-  }, [leadership, processSafetyInfo, riskManagement, operations, maintenance, inspection, callRBIEndpoint])
+  }, [managementInspection, siteManagement, managementOfChange, failureInvestigation, processSafety, operatingProcedures, callRBIEndpoint])
 
   const calculateTimeline = useCallback(() => {
     callRBIEndpoint('calculate-timeline', {
@@ -625,12 +625,12 @@ export default function RBIPage() {
               <h2 className="font-semibold text-lg">Facility Management Score (FMS)</h2>
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 {[
-                  { label: 'Leadership', value: leadership, setter: setLeadership },
-                  { label: 'Process Safety Info', value: processSafetyInfo, setter: setProcessSafetyInfo },
-                  { label: 'Risk Management', value: riskManagement, setter: setRiskManagement },
-                  { label: 'Operations', value: operations, setter: setOperations },
-                  { label: 'Maintenance', value: maintenance, setter: setMaintenance },
-                  { label: 'Inspection', value: inspection, setter: setInspection }
+                  { label: 'Management of Inspection', value: managementInspection, setter: setManagementInspection },
+                  { label: 'Site Management', value: siteManagement, setter: setSiteManagement },
+                  { label: 'Management of Change', value: managementOfChange, setter: setManagementOfChange },
+                  { label: 'Failure Investigation', value: failureInvestigation, setter: setFailureInvestigation },
+                  { label: 'Process Safety', value: processSafety, setter: setProcessSafety },
+                  { label: 'Operating Procedures', value: operatingProcedures, setter: setOperatingProcedures }
                 ].map(({ label, value, setter }) => (
                   <div key={label}>
                     <label className="block text-sm font-medium mb-1">{label} (0-100)</label>
